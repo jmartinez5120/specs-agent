@@ -163,66 +163,11 @@ class ResultDetailModal(ModalScreen[None]):
 
         return "\n".join(lines)
 
-    @work(thread=False)
-    async def action_try_again(self) -> None:
-        """Re-execute the same test case and show the result inline."""
-        result_widget = self.query_one("#rd-live-result", Static)
-        result_widget.update("\n  [#cc9944]Sending request...[/]")
-
-        # Find the test case from the plan
+    def action_try_again(self) -> None:
+        """Open the retry editor modal to edit and re-send the request."""
         tc = self._find_test_case()
-        if not tc:
-            result_widget.update("\n  [#cc4444]Could not find test case in plan[/]")
-            return
-
-        from specs_agent.execution.functional import FunctionalExecutor
-        from specs_agent.models.config import TestRunConfig
-
-        base_url = ""
-        config = TestRunConfig(timeout_seconds=10.0)
-        if hasattr(self.app, "test_plan") and self.app.test_plan:
-            base_url = self.app.test_plan.base_url
-        if hasattr(self.app, "run_config"):
-            rc = self.app.run_config
-            config.base_url = rc.base_url or base_url
-            config.auth_type = rc.auth_type
-            config.auth_value = rc.auth_value
-            config.verify_ssl = rc.verify_ssl
-            config.follow_redirects = rc.follow_redirects
-            config.timeout_seconds = rc.timeout_seconds
-        if not config.base_url:
-            config.base_url = base_url
-
-        executor = FunctionalExecutor(config)
-        new_result = await executor.execute(tc)
-
-        # Format the new result
-        color = _status_color(new_result.status)
-        type_icon = "😈" if new_result.test_type == "sad" else "😊"
-        lines = [
-            f"\n  [bold #cc9944]Retry Result[/]",
-            f"  [{color}]{type_icon} {new_result.status.value.upper()}[/]  "
-            f"[#c0c0d0]{new_result.method} {new_result.endpoint}[/]",
-        ]
-        if new_result.status_code:
-            lines.append(f"    Status: [{color}]{new_result.status_code}[/]  Time: [#55aacc]{new_result.response_time_ms:.0f}ms[/]")
-        if new_result.error_message:
-            lines.append(f"    [#cc4444]{new_result.error_message}[/]")
-        for ar in new_result.assertion_results:
-            icon = "[#55cc55]✓[/]" if ar.passed else "[#cc4444]✗[/]"
-            lines.append(f"    {icon} {ar.assertion_type}: {ar.actual}")
-        if new_result.response_body is not None:
-            body_str = _format_json(new_result.response_body, max_lines=30)
-            lines.append(f"    [#7a7a9a]Body:[/]")
-            for bline in body_str.split("\n"):
-                lines.append(f"      [#7a7a9a]{bline}[/]")
-
-        if new_result.response_headers:
-            lines.append(f"\n    [bold #cc9944]Response Headers[/]")
-            for hk, hv in new_result.response_headers.items():
-                lines.append(f"      [#7a7a9a]{hk}: {hv}[/]")
-
-        result_widget.update("\n".join(lines))
+        from specs_agent.screens.retry_editor_modal import RetryEditorModal
+        self.app.push_screen(RetryEditorModal(self.result, test_case=tc))
 
     def action_show_spec(self) -> None:
         """Show the spec detail for this endpoint on the right panel."""
@@ -340,8 +285,13 @@ class ResultDetailModal(ModalScreen[None]):
         plan = getattr(self.app, "test_plan", None)
         if not plan:
             return None
+        # Match by ID first
         for tc in plan.test_cases:
             if tc.id == self.result.test_case_id:
+                return tc
+        # Fallback: match by name (IDs change on plan regeneration)
+        for tc in plan.test_cases:
+            if tc.name == self.result.test_case_name:
                 return tc
         return None
 

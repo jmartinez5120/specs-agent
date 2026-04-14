@@ -577,7 +577,7 @@ class DetailModal(ModalScreen[None]):
             raw_val = inp.value.strip()
             if not raw_val:
                 continue
-            if raw_val in _GENERATORS or raw_val.lstrip("$") in _GENERATORS:
+            if raw_val.lower() in _GENERATORS or raw_val.lstrip("$").lower() in _GENERATORS:
                 clean = raw_val.lstrip("$")
                 raw_val = f"{{{{${clean}}}}}"
             if section == "path_params":
@@ -589,76 +589,63 @@ class DetailModal(ModalScreen[None]):
             elif section == "body" and isinstance(self.tc.body, dict):
                 self.tc.body[key] = raw_val
 
-    @work(thread=False)
-    async def action_try_request(self) -> None:
-        """Send a single test request and show the response inline."""
+    def action_try_request(self) -> None:
+        """Open the retry editor modal to edit and send the request."""
         self._apply_edits()
 
-        result_widget = self.query_one("#try-result", Static)
-        result_widget.update("[#cc9944]Sending request...[/]")
+        # Build a stub TestResult from the test case to populate the editor
+        from specs_agent.models.results import TestResult, TestStatus
+        from specs_agent.templating.variables import resolve_value
 
         base_url = "http://localhost"
         if hasattr(self.app, "test_plan") and self.app.test_plan:
             base_url = self.app.test_plan.base_url
+        if hasattr(self.app, "run_config") and self.app.run_config.base_url:
+            base_url = self.app.run_config.base_url
 
-        config = TestRunConfig(base_url=base_url, timeout_seconds=10.0)
-        if hasattr(self.app, "run_config"):
-            rc = self.app.run_config
-            config.base_url = rc.base_url or base_url
-            config.auth_type = rc.auth_type
-            config.auth_value = rc.auth_value
-            config.verify_ssl = rc.verify_ssl
-            config.follow_redirects = rc.follow_redirects
-            config.timeout_seconds = rc.timeout_seconds
+        # Resolve template variables for the URL
+        path = self.tc.endpoint_path
+        path_params = resolve_value(dict(self.tc.path_params))
+        for k, v in path_params.items():
+            path = path.replace(f"{{{k}}}", str(v))
+        url = f"{base_url.rstrip('/')}{path}"
 
-        executor = FunctionalExecutor(config)
-        result = await executor.execute(self.tc)
+        stub_result = TestResult(
+            test_case_id=self.tc.id,
+            test_case_name=self.tc.name,
+            endpoint=f"{self.tc.method} {self.tc.endpoint_path}",
+            method=self.tc.method,
+            status=TestStatus.SKIPPED,
+            request_url=url,
+            request_headers=dict(self.tc.headers),
+            request_body=self.tc.body,
+            test_type=self.tc.test_type,
+        )
 
-        # Format the response
-        lines: list[str] = []
-        lines.append(f"\n  [bold #cc9944]Test Result[/]")
+        from specs_agent.screens.retry_editor_modal import RetryEditorModal
+        self.app.push_screen(
+            RetryEditorModal(stub_result, test_case=self.tc),
+            callback=self._on_retry_editor_closed,
+        )
 
-        status_color = {
-            "passed": "#55cc55",
-            "failed": "#cc4444",
-            "error": "#cc9944",
-        }.get(result.status.value, "#7a7a9a")
-
-        lines.append(f"  [{status_color}]{result.status.value.upper()}[/]  "
-                      f"[#c0c0d0]{result.method} {result.endpoint}[/]")
-
-        if result.status_code:
-            lines.append(f"  [#c0c0d0]Status:[/] [{status_color}]{result.status_code}[/]  "
-                          f"[#c0c0d0]Time:[/] [#55aacc]{result.response_time_ms:.0f}ms[/]")
-
-        if result.error_message:
-            lines.append(f"  [#cc4444]{result.error_message}[/]")
-
-        # Assertions
-        if result.assertion_results:
-            for ar in result.assertion_results:
-                icon = "[#55cc55]✓[/]" if ar.passed else "[#cc4444]✗[/]"
-                lines.append(f"  {icon} {ar.assertion_type}: {ar.actual}")
-                if ar.message:
-                    lines.append(f"    [#7a7a9a]{ar.message}[/]")
-
-        # Response body (truncated)
-        if result.response_body is not None:
-            import json
-            lines.append(f"\n  [bold #cc9944]Response Body[/]")
+    def _on_retry_editor_closed(self, _result) -> None:
+        """Refresh Input fields from the (possibly updated) test case."""
+        for input_id, (section, key) in self._edit_fields.items():
             try:
-                body_str = json.dumps(result.response_body, indent=2)
-            except (TypeError, ValueError):
-                body_str = str(result.response_body)
-            # Truncate long bodies
-            body_lines = body_str.split("\n")
-            if len(body_lines) > 15:
-                body_lines = body_lines[:15]
-                body_lines.append("  ...")
-            for bl in body_lines:
-                lines.append(f"  [#7a7a9a]{bl}[/]")
-
-        result_widget.update("\n".join(lines))
+                inp = self.query_one(f"#{input_id}", Input)
+            except Exception:
+                continue
+            if section == "path_params":
+                val = self.tc.path_params.get(key, "")
+            elif section == "query_params":
+                val = self.tc.query_params.get(key, "")
+            elif section == "headers":
+                val = self.tc.headers.get(key, "")
+            elif section == "body" and isinstance(self.tc.body, dict):
+                val = self.tc.body.get(key, "")
+            else:
+                continue
+            inp.value = _strip_braces(str(val))
 
     def action_copy_curl(self) -> None:
         from specs_agent.curl_builder import build_curl
