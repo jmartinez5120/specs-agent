@@ -1,0 +1,169 @@
+/* ============================================
+   SPECS INVADERS :: SPACE THEME
+   Clean, dark navy with scattered stars
+   ============================================ */
+
+/* ── Base colors ──────────────────────────── */
+
+Screen {
+    background: #1a1b2e;
+    color: #c0c0d0;
+}
+
+Header {
+    dock: top;
+    background: #1a1b2e;
+    color: #7a7a9a;
+}
+
+Footer {
+    dock: bottom;
+    background: #1a1b2e;
+    color: #7a7a9a;
+}
+
+/* ── Buttons: clean, minimal ──────────────── */
+
+Button {
+    min-width: 16;
+    background: #252640;
+    color: #55cc55;
+    border: none;
+    text-style: bold;
+    margin: 0 1;
+}
+
+Button:hover {
+    background: #303055;
+    color: #77ee77;
+}
+
+Button:focus {
+    background: #303055;
+    color: #77ee77;
+}
+
+Button.-primary {
+    background: #252640;
+    color: #55cc55;
+}
+
+Button.-success {
+    background: #252640;
+    color: #55cc55;
+}
+
+Button.-warning {
+    background: #252640;
+    color: #cc9944;
+}
+
+Button.-error {
+    background: #252640;
+    color: #cc4444;
+}
+
+/* ── Input fields ─────────────────────────── */
+
+Input {
+    background: #12132a;
+    color: #55cc55;
+    border: tall #333355;
+}
+
+Input:focus {
+    border: tall #55cc55;
+    color: #77ee77;
+}
+
+Input > .input--placeholder {
+    color: #445544;
+}
+
+Input > .input--cursor {
+    background: #55cc55;
+    color: #12132a;
+}
+
+/* ── DataTable ────────────────────────────── */
+
+DataTable {
+    height: 1fr;
+    background: #1a1b2e;
+    color: #c0c0d0;
+}
+
+DataTable > .datatable--header {
+    background: #222240;
+    color: #7a7a9a;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: #2a2a50;
+    color: #55cc55;
+}
+
+DataTable > .datatable--even-row {
+    background: #1a1b2e;
+}
+
+DataTable > .datatable--odd-row {
+    background: #1e1f32;
+}
+
+/* ── Tree widget ──────────────────────────── */
+
+Tree {
+    background: #1a1b2e;
+    color: #c0c0d0;
+}
+
+Tree > .tree--cursor {
+    background: #2a2a50;
+    color: #55cc55;
+}
+
+Tree > .tree--highlight {
+    background: #222240;
+}
+
+/* ── ListView ─────────────────────────────── */
+
+ListView {
+    background: #1a1b2e;
+    color: #c0c0d0;
+}
+
+ListView > .listview--highlight {
+    background: #2a2a50;
+}
+
+ListItem {
+    background: #1a1b2e;
+    color: #c0c0d0;
+}
+
+ListItem:hover {
+    background: #222240;
+}
+
+/* ── Static / Label ───────────────────────── */
+
+Static {
+    color: #c0c0d0;
+}
+
+Label {
+    color: #c0c0d0;
+}
+
+/* ── Loading ──────────────────────────────── */
+
+#loading-indicator {
+    width: 100%;
+    height: 3;
+    content-align: center middle;
+    text-style: bold;
+    color: #cc9944;
+}

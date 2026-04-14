@@ -1,0 +1,28 @@
+version: 1
+
+defaults:
+  base_url: ""
+  timeout_seconds: 30
+  follow_redirects: true
+  verify_ssl: true
+
+performance:
+  concurrent_users: 10
+  duration_seconds: 30
+  ramp_up_seconds: 5
+  latency_p95_threshold_ms: 2000
+
+auth_presets:
+  - name: "Bearer Token"
+    type: bearer
+    header: ""
+    value: ""
+
+recent_specs: []
+
+reports:
+  output_dir: "~/.specs-agent/reports"
+  format: "html"
+  open_after_export: true
+
+theme: "dark"

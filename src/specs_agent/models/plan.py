@@ -1,0 +1,80 @@
+"""Data models for test plans and test cases."""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class AssertionType(str, Enum):
+    STATUS_CODE = "status_code"
+    RESPONSE_SCHEMA = "response_schema"
+    RESPONSE_CONTAINS = "response_contains"
+    HEADER_PRESENT = "header_present"
+    HEADER_VALUE = "header_value"
+    RESPONSE_TIME_MS = "response_time_ms"
+
+
+@dataclass
+class Assertion:
+    type: AssertionType
+    expected: Any
+    description: str = ""
+
+
+@dataclass
+class TestCase:
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
+    endpoint_path: str = ""
+    method: str = "GET"
+    name: str = ""
+    description: str = ""
+    enabled: bool = True
+    # Request construction
+    path_params: dict[str, str] = field(default_factory=dict)
+    query_params: dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
+    body: Any = None
+    # Assertions
+    assertions: list[Assertion] = field(default_factory=list)
+    # Dependency chain
+    depends_on: str | None = None
+    # Metadata
+    needs_input: bool = False
+    test_type: str = "happy"  # "happy" or "sad"
+
+    @property
+    def display_name(self) -> str:
+        return self.name or f"{self.method} {self.endpoint_path}"
+
+
+@dataclass
+class TestPlan:
+    name: str
+    spec_title: str
+    base_url: str
+    created_at: str = ""
+    test_cases: list[TestCase] = field(default_factory=list)
+    global_headers: dict[str, str] = field(default_factory=dict)
+    auth_type: str = "none"
+    auth_value: str = ""
+    # Performance SLAs keyed by "METHOD /path"
+    performance_slas: dict[str, dict] = field(default_factory=dict)
+
+    @property
+    def enabled_cases(self) -> list[TestCase]:
+        return [tc for tc in self.test_cases if tc.enabled]
+
+    @property
+    def total_count(self) -> int:
+        return len(self.test_cases)
+
+    @property
+    def enabled_count(self) -> int:
+        return len(self.enabled_cases)
+
+    @property
+    def needs_input_count(self) -> int:
+        return sum(1 for tc in self.test_cases if tc.needs_input)
