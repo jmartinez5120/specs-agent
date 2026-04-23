@@ -1,0 +1,173 @@
+# specs-agent — dockerized stack
+#
+# Services:
+#   mongo          — MongoDB 7 running as a single-node replica set (rs0).
+#                    The replica set is required so the search indexer can
+#                    tail change streams (PR 2). Initialization is handled
+#                    by the mongo-init sidecar.
+#   mongo-init     — one-shot sidecar that runs `rs.initiate()` once the
+#                    mongod is reachable, then exits. Idempotent: if the
+#                    replica set is already initialized, it's a no-op.
+#   elasticsearch  — Elasticsearch 8.x single-node, security disabled
+#                    (dev only). Hosts the denormalized search index.
+#   api            — FastAPI backend. Depends on mongo (healthy, i.e.
+#                    replica set initialized) and elasticsearch (healthy).
+#   web            — static Web UI served by nginx.
+#
+# Usage:
+#   docker compose up --build     # first boot
+#   docker compose up             # subsequent
+#   docker compose down -v        # clean volumes
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: specs-agent-mongo
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      # Healthy only once the replica set is initialized. `rs.status().ok`
+      # is 1 after `rs.initiate()` completes, 0 (or throws) before. This
+      # gates dependent services on a fully usable Mongo — not just a
+      # reachable mongod.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch (e) { 0 }"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  mongo-init:
+    image: mongo:7
+    container_name: specs-agent-mongo-init
+    depends_on:
+      mongo:
+        condition: service_started
+    restart: "no"
+    # Wait for mongod to answer, then initiate the single-node replica set.
+    # Idempotent: `rs.status()` throws if not initialized, so we catch and
+    # only call `rs.initiate()` in that case. Exits 0 on success.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "[mongo-init] waiting for mongod..."
+        until mongosh --host mongo:27017 --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; do
+          sleep 1
+        done
+        echo "[mongo-init] mongod is up; ensuring replica set rs0..."
+        mongosh --host mongo:27017 --quiet --eval '
+          try {
+            rs.status();
+            print("[mongo-init] replica set already initialized");
+          } catch (e) {
+            print("[mongo-init] initiating replica set...");
+            rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongo:27017" }] });
+          }
+        '
+        echo "[mongo-init] done"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: specs-agent-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      # Security disabled for local dev. Do NOT use this configuration
+      # in production — expose ES only on the compose network, never on
+      # a public interface, and re-enable xpack.security for shared envs.
+      xpack.security.enabled: "false"
+      xpack.security.enrollment.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsS http://localhost:9200/_cluster/health | grep -Eq '\"status\":\"(green|yellow)\"'"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODEL_SIZE: "${SPECS_AGENT_AI_MODEL_SIZE:-medium}"
+        INSTALL_AI: "1"
+    image: specs-agent-api:latest
+    container_name: specs-agent-api
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      SPECS_AGENT_HOST: "0.0.0.0"
+      SPECS_AGENT_PORT: "8765"
+      SPECS_AGENT_STORAGE: "mongo"
+      # Replica-set member lists a single host; directConnection=true lets
+      # pymongo talk to it without needing multi-member topology discovery.
+      SPECS_AGENT_MONGO_URL: "mongodb://mongo:27017/?replicaSet=rs0&directConnection=true"
+      SPECS_AGENT_MONGO_DB: "specs_agent"
+      SPECS_AGENT_IN_DOCKER: "1"
+      # Search backend (PR 2 wires this up; PR 1 just makes the URL reachable).
+      SPECS_AGENT_SEARCH: "elasticsearch"
+      ELASTICSEARCH_URL: "http://elasticsearch:9200"
+      # AI scenario generation
+      # Backend: "http" uses Docker Model Runner (Metal GPU on Mac),
+      #          "llama_cpp" uses the in-process GGUF baked into the image.
+      SPECS_AGENT_AI_ENABLED: "${SPECS_AGENT_AI_ENABLED:-1}"
+      SPECS_AGENT_AI_BACKEND: "${SPECS_AGENT_AI_BACKEND:-http}"
+      SPECS_AGENT_AI_HTTP_BASE_URL: "${SPECS_AGENT_AI_HTTP_BASE_URL:-http://model-runner.docker.internal/engines/v1}"
+      SPECS_AGENT_AI_HTTP_MODEL: "${SPECS_AGENT_AI_HTTP_MODEL:-hf.co/unsloth/gemma-4-E4B-it-GGUF:Q4_K_M}"
+      SPECS_AGENT_AI_N_CTX: "${SPECS_AGENT_AI_N_CTX:-2048}"
+    # On Linux, host.docker.internal does not resolve by default.
+    # `host-gateway` is the special value Docker maps to the host address,
+    # so services like `http://localhost:8080` on the developer's machine
+    # become reachable from inside the container via host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ai_cache:/home/specs/.specs-agent/ai-cache
+    ports:
+      - "8765:8765"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8765/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: specs-agent-web:latest
+    container_name: specs-agent-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  mongo_data:
+  ai_cache:
+  es_data:
