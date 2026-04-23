@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b794f6"/>
+      <stop offset="1" stop-color="#805ad5"/>
+    </linearGradient>
+  </defs>
+  <!-- Antenna -->
+  <circle cx="32" cy="6" r="4" fill="#b794f6"/>
+  <rect x="30" y="8" width="4" height="8" rx="2" fill="#b794f6"/>
+  <!-- Head -->
+  <rect x="8" y="14" width="48" height="40" rx="14" fill="url(#g)"/>
+  <!-- Eyes -->
+  <rect x="18" y="28" width="10" height="8" rx="3" fill="#1a1a2e"/>
+  <rect x="36" y="28" width="10" height="8" rx="3" fill="#1a1a2e"/>
+  <!-- Eye shine -->
+  <rect x="20" y="30" width="4" height="3" rx="1.5" fill="#e2d5f8" opacity="0.7"/>
+  <rect x="38" y="30" width="4" height="3" rx="1.5" fill="#e2d5f8" opacity="0.7"/>
+  <!-- Mouth -->
+  <rect x="22" y="42" width="20" height="4" rx="2" fill="#1a1a2e"/>
+  <!-- Ear bolts -->
+  <circle cx="8" cy="34" r="4" fill="#9f7aea"/>
+  <circle cx="56" cy="34" r="4" fill="#9f7aea"/>
+</svg>

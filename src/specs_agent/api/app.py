@@ -404,6 +404,36 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         )
         return result_to_dict(result)
 
+    @app.post("/search/reindex")
+    async def search_reindex() -> dict:
+        """Drop the search index and rebuild it from Mongo.
+
+        Used by the Web UI's 'Re-index' control. Destructive — the index
+        is unavailable for queries while it rebuilds, but that window is
+        short (seconds for typical workloads). Returns the number of docs
+        upserted so the UI can surface a meaningful confirmation.
+        """
+        if not getattr(app.state, "search_enabled", False):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "search requires mongo storage "
+                    "(set SPECS_AGENT_STORAGE=mongo and restart)"
+                ),
+            )
+        from specs_agent.search.client import get_client
+        from specs_agent.search.schema import reset_index
+
+        indexer = app.state.search_indexer
+        if indexer is None:
+            # Defensive — search_enabled is only True once indexer.start()
+            # finished, so this shouldn't fire in practice.
+            raise HTTPException(status_code=503, detail="search indexer not running")
+
+        await reset_index(get_client())
+        count = await indexer.backfill()
+        return {"reindexed": count}
+
     # ------------------------------------------------------------------ #
     # Config
     # ------------------------------------------------------------------ #
