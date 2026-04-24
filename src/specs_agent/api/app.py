@@ -273,16 +273,17 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 status_code=400,
                 detail=_load_error_with_hint(exc, req.source, effective_source),
             )
-        # Auto-save the spec for the spec browser
-        try:
-            eng.save_spec(
-                title=result.spec.title,
-                source=req.source,
-                source_type=result.source_type,
-                raw_spec=result.spec.raw_spec,
-            )
-        except Exception:
-            pass  # best-effort — don't fail the load if save fails
+        # Auto-save the spec for the spec browser (unless this is a preview).
+        if req.save:
+            try:
+                eng.save_spec(
+                    title=result.spec.title,
+                    source=req.source,
+                    source_type=result.source_type,
+                    raw_spec=result.spec.raw_spec,
+                )
+            except Exception:
+                pass  # best-effort — don't fail the load if save fails
 
         spec_dict = jsonable_encoder(asdict(result.spec))
 
@@ -444,7 +445,10 @@ def create_app(engine: Engine | None = None) -> FastAPI:
 
     @app.put("/config")
     async def put_config(dto: s.AppConfigDTO, eng: Engine = Depends(get_engine)) -> Response:
-        eng.save_config(dto_to_config(dto))
+        from specs_agent.api.converters import merge_config_preserving_secrets
+        existing = eng.load_config()
+        new_cfg = merge_config_preserving_secrets(dto_to_config(dto), existing)
+        eng.save_config(new_cfg)
         return Response(status_code=204)
 
     # ------------------------------------------------------------------ #
@@ -504,7 +508,10 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     async def ai_status(eng: Engine = Depends(get_engine)) -> dict:
         config = eng.load_config()
         if not config.ai_enabled:
-            return {"enabled": False, "available": False, "model_loaded": False}
+            return {
+                "enabled": False, "available": False, "model_loaded": False,
+                "provider": config.ai_provider,
+            }
         try:
             from specs_agent.ai.generator import AIGenerator
             gen = AIGenerator(
@@ -517,13 +524,24 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 http_base_url=config.ai_http_base_url,
                 http_model=config.ai_http_model,
                 http_api_key=config.ai_http_api_key,
+                provider=config.ai_provider,
+                anthropic_api_key=config.ai_anthropic_api_key,
+                anthropic_model=config.ai_anthropic_model,
+                openai_api_key=config.ai_openai_api_key,
+                openai_model=config.ai_openai_model,
+                openai_base_url=config.ai_openai_base_url,
             )
             status = gen.status()
             status["enabled"] = True
             status["available"] = gen.is_available()
+            status["provider"] = config.ai_provider
             return status
         except ImportError:
-            return {"enabled": True, "available": False, "error": "llama-cpp-python not installed"}
+            return {
+                "enabled": True, "available": False,
+                "provider": config.ai_provider,
+                "error": "AI backend not installed",
+            }
 
     @app.post("/ai/cache/clear")
     async def ai_cache_clear(eng: Engine = Depends(get_engine)) -> dict:
@@ -608,11 +626,22 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                         http_base_url=config.ai_http_base_url,
                         http_model=config.ai_http_model,
                         http_api_key=config.ai_http_api_key,
+                        provider=config.ai_provider,
+                        anthropic_api_key=config.ai_anthropic_api_key,
+                        anthropic_model=config.ai_anthropic_model,
+                        openai_api_key=config.ai_openai_api_key,
+                        openai_model=config.ai_openai_model,
+                        openai_base_url=config.ai_openai_base_url,
                     )
 
-                    # Resolve model name for display
-                    if config.ai_backend == "http" or (config.ai_backend == "auto" and config.ai_http_model):
-                        model_name = f"{config.ai_http_model} (via {config.ai_http_base_url or 'HTTP API'}) · GPU"
+                    # Resolve display name based on the active provider
+                    if config.ai_provider == "anthropic":
+                        model_name = f"{config.ai_anthropic_model} (Anthropic Claude API)"
+                    elif config.ai_provider == "openai":
+                        host = config.ai_openai_base_url or "api.openai.com"
+                        model_name = f"{config.ai_openai_model} (OpenAI · {host})"
+                    elif config.ai_provider == "openai_compatible":
+                        model_name = f"{config.ai_http_model} (via {config.ai_http_base_url or 'HTTP API'})"
                     else:
                         preset = PRESETS.get(config.ai_model_size)
                         if preset:
