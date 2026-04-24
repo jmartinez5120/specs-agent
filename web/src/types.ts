@@ -228,7 +228,31 @@ export interface AppConfig {
   ai_n_ctx: number;
   ai_n_gpu_layers: number;
   ai_cache_dir: string;
+  // Multi-provider AI config. The backend is moving from a single "ai_backend"
+  // value to a discrete provider selector. Old `ai_backend` is preserved for
+  // backward compat reads — the UI writes/reads `ai_provider`.
+  ai_provider?: AIProvider;
+  /** @deprecated kept for backward compat with older configs */
+  ai_backend?: string;
+  // Anthropic (Claude API) provider
+  ai_anthropic_api_key?: string;
+  ai_anthropic_model?: string;
+  // OpenAI (ChatGPT) provider
+  ai_openai_api_key?: string;
+  ai_openai_model?: string;
+  ai_openai_base_url?: string;
+  // OpenAI-compatible (Ollama, vLLM, etc.) — existing fields, surfaced when
+  // ai_provider === "openai_compatible"
+  ai_http_base_url?: string;
+  ai_http_model?: string;
+  ai_http_api_key?: string;
 }
+
+export type AIProvider =
+  | "local_gguf"
+  | "anthropic"
+  | "openai"
+  | "openai_compatible";
 
 // WebSocket execution events
 export type ExecEvent =
