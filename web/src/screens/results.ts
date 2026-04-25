@@ -153,55 +153,45 @@ export function mountResults(container: HTMLElement): () => void {
   function openResultDetail(r: TestResult) {
     const explanation = getStatusExplanation(r.status_code, r.error_message);
 
-    const sections: (HTMLElement | null)[] = [
-      // Status + timing
-      h(".field",
-        h("label.label", "Status"),
-        h(".inline",
-          h(`span.badge.${r.status}`, r.status.toUpperCase()),
-          h("span.mono", { style: { marginLeft: "var(--s-3)" } },
-            `${r.status_code ?? "-"} · ${Math.round(r.response_time_ms)}ms`,
-          ),
-        ),
+    // Compact summary row: status badge, code, timing — all on one line.
+    const summary = h(".field",
+      h(".inline", { style: { gap: "var(--s-3)", flexWrap: "wrap", alignItems: "center" } },
+        h(`span.badge.${r.status}`, r.status.toUpperCase()),
+        h("span.mono", `${r.status_code ?? "-"} · ${Math.round(r.response_time_ms)}ms`),
+        explanation
+          ? h("span.sub", { style: { flex: "1 1 200px" } }, explanation)
+          : null as unknown as HTMLElement,
       ),
+    );
 
-      // Error message
-      r.error_message
-        ? h(".field", h("label.label", "Error"), h(".mono", { style: { color: "var(--danger)" } }, r.error_message))
-        : null,
+    const errorField = r.error_message
+      ? h(".field", h("label.label", "Error"), h(".mono", { style: { color: "var(--danger)" } }, r.error_message))
+      : null;
 
-      // Human-readable explanation
-      explanation
-        ? h(".field",
-            h("label.label", "Explanation"),
-            h(".sub", { style: { padding: "var(--s-3)", background: "var(--bg-muted)", borderRadius: "var(--r-2)" } }, explanation),
-          )
-        : null,
-
-      // Assertions
-      r.assertion_results.length
-        ? h(".field",
-            h("label.label", `Assertions (${r.assertion_results.length})`),
-            ...r.assertion_results.map((a) =>
-              h(".row", { style: { cursor: "default" } },
-                h(`span.badge.${a.passed ? "passed" : "failed"}`, a.passed ? "OK" : "FAIL"),
-                h("div",
-                  h(".path", a.assertion_type),
-                  h(".sub", `expected ${JSON.stringify(a.expected)} · actual ${JSON.stringify(a.actual)}`),
-                ),
-                h(".sub", a.message || ""),
+    const assertions = r.assertion_results.length
+      ? h(".field",
+          h("label.label", `Assertions (${r.assertion_results.length})`),
+          ...r.assertion_results.map((a) =>
+            h(".row", { style: { cursor: "default" } },
+              h(`span.badge.${a.passed ? "passed" : "failed"}`, a.passed ? "OK" : "FAIL"),
+              h("div",
+                h(".path", a.assertion_type),
+                h(".sub", `expected ${JSON.stringify(a.expected)} · actual ${JSON.stringify(a.actual)}`),
               ),
+              h(".sub", a.message || ""),
             ),
-          )
-        : null,
+          ),
+        )
+      : null;
 
-      // Request details
+    // Two-column layout: request on left, response on right.
+    const reqCol = h(".stack", { style: { gap: "var(--s-3)", minWidth: "0" } },
+      h("h4", { style: { margin: "0", color: "var(--accent)", fontSize: "12px", letterSpacing: "0.08em" } }, "REQUEST"),
       r.request_url
-        ? h(".field", h("label.label", "Request URL"), h("pre.mono", { style: preStyle }, r.request_url))
+        ? h(".field", h("label.label", "URL"), h("pre.mono", { style: preStyle }, r.request_url))
         : null,
-
       r.request_headers && Object.keys(r.request_headers).length
-        ? h(".field", h("label.label", "Request Headers"),
+        ? h(".field", h("label.label", "Headers"),
             h("pre.mono", { style: preStyle },
               Object.entries(r.request_headers)
                 .map(([k, v]) => `${k}: ${k.toLowerCase() === "authorization" ? maskAuth(v) : v}`)
@@ -209,34 +199,51 @@ export function mountResults(container: HTMLElement): () => void {
             ),
           )
         : null,
-
       r.request_body != null
-        ? h(".field", h("label.label", "Request Body"),
+        ? h(".field", h("label.label", "Body"),
             h("pre.mono", { style: preStyle },
               typeof r.request_body === "object" ? JSON.stringify(r.request_body, null, 2) : String(r.request_body),
             ),
           )
         : null,
+    );
 
-      // Response details
+    const resCol = h(".stack", { style: { gap: "var(--s-3)", minWidth: "0" } },
+      h("h4", { style: { margin: "0", color: "var(--accent-2)", fontSize: "12px", letterSpacing: "0.08em" } }, "RESPONSE"),
       r.response_headers && Object.keys(r.response_headers).length
-        ? h(".field", h("label.label", "Response Headers"),
+        ? h(".field", h("label.label", "Headers"),
             h("pre.mono", { style: preStyle },
               Object.entries(r.response_headers).map(([k, v]) => `${k}: ${v}`).join("\n"),
             ),
           )
         : null,
-
       r.response_body !== undefined && r.response_body !== null
-        ? h(".field", h("label.label", "Response Body"),
+        ? h(".field", h("label.label", "Body"),
             h("pre.mono", { style: preStyle },
               typeof r.response_body === "string" ? r.response_body : JSON.stringify(r.response_body, null, 2),
             ),
           )
         : null,
-    ];
+    );
 
-    const body = h("div", ...sections.filter(Boolean) as HTMLElement[]);
+    const grid = h("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+        gap: "var(--s-4)",
+        minHeight: "0",
+        flex: "1 1 0",
+      },
+    }, reqCol, resCol);
+
+    const top = h("div", { style: { flex: "0 0 auto" } },
+      ...[summary, errorField, assertions].filter(Boolean) as HTMLElement[],
+    );
+
+    const body = h("div", {
+      style: { display: "flex", flexDirection: "column", gap: "var(--s-3)", height: "100%", minHeight: "0" },
+    }, top, grid);
+
     openModal({ title: r.test_case_name, body, wide: true });
   }
 

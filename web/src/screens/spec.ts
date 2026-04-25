@@ -366,7 +366,7 @@ function renderDetailMode(container: HTMLElement): () => void {
             background: "transparent",
             border: "none",
             borderBottom: active
-              ? "2px solid var(--violet, #818cf8)"
+              ? "2px solid var(--primary, #d4a828)"
               : "2px solid transparent",
             color: active ? "var(--text, #e5e7eb)" : "var(--muted, #9ca3af)",
             padding: "var(--s-3) var(--s-4)",

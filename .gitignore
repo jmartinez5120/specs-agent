@@ -12,3 +12,12 @@ venv/
 *.swp
 *.swo
 .DS_Store
+
+# Visual debugging screenshots from design iteration
+tron-*.png
+
+# QA agent evidence + Claude/Playwright cache dirs
+.qa-evidence/
+.playwright-mcp/
+.claude/
+.coverage

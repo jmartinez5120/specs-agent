@@ -7,41 +7,56 @@
 ============================================================ */
 
 :root {
-  /* Surfaces */
-  --bg: #1c2434;           /* page background */
-  --bg-subtle: #24303f;    /* card surface */
-  --bg-raised: #2a3442;    /* hovered card / input focus */
-  --bg-muted: #1a1f2c;     /* darker inset */
-  --sidebar-bg: #1a2132;
-  --header-bg: #1c2434;
+  /* Surfaces — TRON grid, lifted a shade so content reads clearly. Base
+     still feels dark and grid-flavored; cards sit noticeably brighter. */
+  --bg: #0d1526;           /* page background */
+  --bg-subtle: #182136;    /* card surface */
+  --bg-raised: #22304f;    /* hovered card / input focus */
+  --bg-muted: #111a2c;     /* darker inset */
+  --sidebar-bg: #0a1222;
+  --header-bg: #0d1526;
 
-  /* Borders */
-  --border: #2e3a47;
-  --border-strong: #3a4657;
-  --divider: #222b38;
+  /* Borders — electric outlines with more presence */
+  --border: #2a3960;
+  --border-strong: #3c4f7a;
+  --divider: #17203a;
 
   /* Text */
-  --text: #dee4ee;
-  --text-muted: #8a99af;
-  --text-dim: #64748b;
-  --text-inverse: #1c2434;
+  --text: #d7e4ff;
+  --text-muted: #7e8ea8;
+  --text-dim: #4b5771;
+  --text-inverse: #04060b;
 
-  /* Brand */
-  --primary: #465fff;
-  --primary-hover: #3c50e0;
-  --primary-soft: rgba(70, 95, 255, 0.12);
-  --primary-soft-strong: rgba(70, 95, 255, 0.22);
+  /* Brand — electric cyan (TRON circuit) */
+  --primary: #00d9ff;
+  --primary-hover: #33e6ff;
+  --primary-soft: rgba(0, 217, 255, 0.12);
+  --primary-soft-strong: rgba(0, 217, 255, 0.28);
+  --accent: #00d9ff;
+  --accent-2: #1e35ba;
 
-  /* Status */
-  --success: #10b981;
-  --success-soft: rgba(16, 185, 129, 0.12);
-  --warning: #f59e0b;
-  --warning-soft: rgba(245, 158, 11, 0.12);
-  --danger: #ef4444;
-  --danger-soft: rgba(239, 68, 68, 0.12);
-  --info: #3b82f6;
-  --info-soft: rgba(59, 130, 246, 0.12);
-  --neutral-soft: rgba(138, 153, 175, 0.14);
+  /* TRON glow — reused in shadows / focus rings */
+  --glow-cyan: 0 0 12px rgba(0, 217, 255, 0.45), 0 0 2px rgba(0, 217, 255, 0.9);
+  --glow-cyan-soft: 0 0 8px rgba(0, 217, 255, 0.25);
+  --glow-orange: 0 0 12px rgba(255, 110, 39, 0.45), 0 0 2px rgba(255, 110, 39, 0.9);
+
+  /* TRON trail palette — thin streaks across the grid */
+  --tron-cyan:    #00d9ff;
+  --tron-orange:  #ff6e27;
+  --tron-magenta: #ff2bd6;
+  --tron-lime:    #30ff9c;
+  --tron-amber:   #ffb547;
+
+  /* Status — TRON-flavored: Sark orange for danger/warning */
+  --success: #30ffcf;
+  --success-soft: rgba(48, 255, 207, 0.12);
+  --warning: #ffb547;
+  --warning-soft: rgba(255, 181, 71, 0.12);
+  --danger: #ff6e27;
+  --danger-soft: rgba(255, 110, 39, 0.14);
+  --info: #00d9ff;
+  --info-soft: rgba(0, 217, 255, 0.12);
+  --neutral-soft: rgba(126, 142, 168, 0.14);
 
   /* Methods (softer, closer to status pastels) */
   --m-get: #10b981;
@@ -72,15 +87,120 @@
   --r-3: 12px;
   --r-4: 16px;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
-  --shadow:    0 4px 12px rgba(0, 0, 0, 0.28);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.5);
+  /* Shadows — TRON 3D elevation. Each step stacks three layers:
+       • tight contact shadow (sharp, close)        → anchors the card
+       • medium drop (wider blur, larger Y offset)  → body of the shadow
+       • long dispersion (huge blur, far Y offset)  → implies altitude
+       • cyan reflection tint                       → glow bounce from grid
+     Plus an inset top-edge rim (light from above) for a 3D chamfer.       */
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 4px 10px rgba(0, 0, 0, 0.45),
+    0 8px 20px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(0, 217, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow:
+    0 2px 4px rgba(0, 0, 0, 0.6),
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    0 28px 60px rgba(0, 0, 0, 0.38),
+    0 4px 12px rgba(0, 217, 255, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-md:
+    0 3px 6px rgba(0, 0, 0, 0.65),
+    0 18px 40px rgba(0, 0, 0, 0.6),
+    0 44px 80px rgba(0, 0, 0, 0.45),
+    0 6px 16px rgba(0, 217, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-lg:
+    0 4px 8px rgba(0, 0, 0, 0.7),
+    0 32px 70px rgba(0, 0, 0, 0.68),
+    0 70px 120px rgba(0, 0, 0, 0.55),
+    0 10px 24px rgba(0, 217, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
   /* Layout */
   --sidebar-w: 260px;
   --header-h: 64px;
+
+  color-scheme: dark;
+}
+
+/* ============================================================
+   Light theme — activated via <html data-theme="light">
+============================================================ */
+
+[data-theme="light"] {
+  /* Surfaces — TRON "user-side": pale cool white with hint of blue */
+  --bg: #eaf1fb;
+  --bg-subtle: #ffffff;
+  --bg-raised: #f3f7ff;
+  --bg-muted: #dfe8f5;
+  --sidebar-bg: #ffffff;
+  --header-bg: #ffffff;
+
+  /* Borders — circuit trace */
+  --border: #c8d4e8;
+  --border-strong: #8fa3c2;
+  --divider: #dfe8f5;
+
+  /* Text */
+  --text: #0a1629;
+  --text-muted: #4a5a74;
+  --text-dim: #7d8ba4;
+  --text-inverse: #ffffff;
+
+  /* Brand — electric TRON blue (saturated, readable on white) */
+  --primary: #0074d9;
+  --primary-hover: #005fbf;
+  --primary-soft: rgba(0, 116, 217, 0.10);
+  --primary-soft-strong: rgba(0, 116, 217, 0.22);
+  --accent: #00a3e0;
+  --accent-2: #0a3d91;
+
+  /* TRON glow — cyan halos tuned for light bg */
+  --glow-cyan: 0 0 10px rgba(0, 163, 224, 0.45), 0 0 2px rgba(0, 163, 224, 0.9);
+  --glow-cyan-soft: 0 0 6px rgba(0, 163, 224, 0.22);
+  --glow-orange: 0 0 10px rgba(255, 110, 39, 0.40), 0 0 2px rgba(255, 110, 39, 0.85);
+
+  /* Status */
+  --success: #067857;
+  --warning: #b86b00;
+  --danger: #c43b10;
+  --info: #0074d9;
+  --success-soft: rgba(6, 120, 87, 0.10);
+  --warning-soft: rgba(184, 107, 0, 0.12);
+  --danger-soft: rgba(196, 59, 16, 0.10);
+  --info-soft: rgba(0, 116, 217, 0.10);
+  --neutral-soft: rgba(74, 90, 116, 0.10);
+
+  /* Shadows — stacked layers for 3D depth on light surfaces. Same recipe
+     as dark (contact + drop + dispersion + tint + rim) just with softer
+     opacity so the cards don't look like they're casting heavy bruises. */
+  --shadow-sm:
+    0 1px 2px rgba(10, 22, 41, 0.10),
+    0 3px 8px rgba(10, 22, 41, 0.08),
+    0 6px 16px rgba(10, 22, 41, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow:
+    0 2px 4px rgba(10, 22, 41, 0.12),
+    0 8px 20px rgba(10, 22, 41, 0.12),
+    0 22px 44px rgba(10, 22, 41, 0.10),
+    0 4px 12px rgba(0, 116, 217, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --shadow-md:
+    0 3px 6px rgba(10, 22, 41, 0.14),
+    0 14px 32px rgba(10, 22, 41, 0.15),
+    0 36px 64px rgba(10, 22, 41, 0.14),
+    0 6px 18px rgba(0, 116, 217, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  --shadow-lg:
+    0 4px 10px rgba(10, 22, 41, 0.16),
+    0 26px 56px rgba(10, 22, 41, 0.18),
+    0 56px 100px rgba(10, 22, 41, 0.18),
+    0 10px 26px rgba(0, 116, 217, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+  color-scheme: light;
 }
 
 /* ============================================================
@@ -102,6 +222,166 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+/* TRON grid — circuit floor in both themes. The grid itself slowly drifts
+   vertically (grid-drift), and a thin scan-line sweeps top→bottom on a
+   long loop (scan-sweep), giving a subtle sense of depth/motion. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -40px 0 0 0;        /* overscan so drift doesn't expose edges */
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(0, 217, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 217, 255, 0.05) 1px, transparent 1px),
+    radial-gradient(ellipse at center, transparent 0%, var(--bg) 75%);
+  background-size: 40px 40px, 40px 40px, 100% 100%;
+  background-position: -1px -1px, -1px -1px, 0 0;
+  animation: grid-drift 24s linear infinite;
+  will-change: background-position;
+}
+[data-theme="light"] body::before {
+  background-image:
+    linear-gradient(rgba(10, 61, 145, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 61, 145, 0.06) 1px, transparent 1px),
+    radial-gradient(ellipse at center, transparent 0%, var(--bg) 75%);
+}
+
+@keyframes grid-drift {
+  0%   { background-position: -1px -1px,   -1px -1px,   0 0; }
+  100% { background-position: -1px 39px,   -1px -1px,   0 0; }
+}
+
+/* TRON light-trails — SVG polylines driven by JS per frame. Each bike has
+   a points[] array; when it enters the cursor shield it adds a turn point
+   and continues, so the line actually bends (no teleporting). */
+.tron-svg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Legacy .tron-trails kept purely so any stale reference still resolves. */
+.tron-trails {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.tron-trails .trail {
+  position: absolute;
+  filter: drop-shadow(0 0 5px var(--trail-color)) drop-shadow(0 0 12px var(--trail-color));
+  opacity: 0;
+}
+
+/* Long light-cycle trail: long faint tail, narrow bright head.
+   ::before renders the "cycle" — a small brighter cap at the leading edge
+   with an extra glow halo. */
+.tron-trails .trail::before {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    #fff 0%,
+    var(--trail-color) 35%,
+    transparent 75%
+  );
+  filter: drop-shadow(0 0 8px var(--trail-color));
+}
+
+/* Horizontal trails move left→right, tail on the left. */
+.tron-trails .trail-h {
+  top: var(--trail-pos);
+  left: -60vw;
+  width: 60vw;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in srgb, var(--trail-color) 12%, transparent) 55%,
+    color-mix(in srgb, var(--trail-color) 45%, transparent) 85%,
+    var(--trail-color) 97%,
+    #fff 100%
+  );
+  animation: trail-h var(--trail-dur) linear var(--trail-delay) infinite;
+}
+.tron-trails .trail-h::before {
+  right: -2px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+}
+
+/* Vertical trails move top→bottom, tail at top. */
+.tron-trails .trail-v {
+  left: var(--trail-pos);
+  top: -60vh;
+  width: 2px;
+  height: 60vh;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--trail-color) 12%, transparent) 55%,
+    color-mix(in srgb, var(--trail-color) 45%, transparent) 85%,
+    var(--trail-color) 97%,
+    #fff 100%
+  );
+  animation: trail-v var(--trail-dur) linear var(--trail-delay) infinite;
+}
+.tron-trails .trail-v::before {
+  bottom: -2px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+}
+@keyframes trail-h {
+  0%   { transform: translateX(0);     opacity: 0; }
+  8%   { opacity: 0.85; }
+  92%  { opacity: 0.85; }
+  100% { transform: translateX(160vw); opacity: 0; }
+}
+@keyframes trail-v {
+  0%   { transform: translateY(0);     opacity: 0; }
+  8%   { opacity: 0.85; }
+  92%  { opacity: 0.85; }
+  100% { transform: translateY(160vh); opacity: 0; }
+}
+[data-theme="light"] .tron-trails .trail {
+  opacity: 0;
+  filter: blur(0.5px) drop-shadow(0 0 5px var(--trail-color));
+}
+[data-theme="light"] .tron-trails .trail-h,
+[data-theme="light"] .tron-trails .trail-v {
+  /* Light-mode trails stay a touch dimmer to avoid washing out the page. */
+  mix-blend-mode: multiply;
+}
+
+/* When a trail's head enters the cursor shield it snaps into a quick
+   dissolve. This class overrides the ongoing sweep animation with a brief
+   fade+shrink so the trail visibly "crashes" rather than passing through. */
+.tron-trails .trail.dying {
+  animation: trail-dying 220ms ease-out forwards !important;
+}
+@keyframes trail-dying {
+  0%   { opacity: 0.85; filter: drop-shadow(0 0 6px var(--trail-color)) drop-shadow(0 0 14px var(--trail-color)); }
+  60%  { opacity: 0.9;  filter: drop-shadow(0 0 10px #fff)                drop-shadow(0 0 22px var(--trail-color)); }
+  100% { opacity: 0;    filter: drop-shadow(0 0 2px var(--trail-color)); transform: scale(0.6); }
+}
+
+/* Respect users who've opted out of motion */
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+  .tron-trails { display: none; }
+}
+
+#app { position: relative; z-index: 1; }
 
 button {
   font: inherit;
@@ -165,6 +445,10 @@ a { color: var(--primary); text-decoration: none; }
   color: #fff;
   font-weight: 700;
   font-size: 14px;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    0 0 14px var(--primary-soft-strong),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .sidebar .nav {
@@ -198,10 +482,18 @@ a { color: var(--primary); text-decoration: none; }
   user-select: none;
 }
 
-.sidebar .nav .item:hover { background: var(--bg-raised); color: var(--text); }
+.sidebar .nav .item:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
 .sidebar .nav .item.active {
   background: var(--primary-soft);
   color: var(--primary);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    0 0 16px var(--primary-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .sidebar .nav .item.active .icon { color: var(--primary); }
 .sidebar .nav .item.disabled { opacity: 0.4; pointer-events: none; }
@@ -295,11 +587,37 @@ a { color: var(--primary); text-decoration: none; }
   border: 1px solid var(--border);
   border-radius: var(--r-3);
   padding: var(--s-6);
+  box-shadow: var(--shadow-md);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.card:hover, .panel:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+.card.plain { padding: 0; }
+.panel.glow { box-shadow: var(--shadow-lg); }
+
+/* Spec Browser (both list + detail modes) — dense data views. Dial shadows
+   back a tier so stacked cards don't compound into heavy bruising under
+   each plate. */
+[data-spec-mode] .card,
+[data-spec-mode] .panel {
   box-shadow: var(--shadow-sm);
 }
-
-.card.plain { padding: 0; }
-.panel.glow { /* drop the glow in tailadmin style */ box-shadow: var(--shadow); }
+[data-spec-mode] .card:hover,
+[data-spec-mode] .panel:hover {
+  box-shadow: var(--shadow);
+  transform: none;
+}
+/* Nested rows inside the Spec Browser list — lighten their shadow too so
+   the Connected/Saved sections don't look like a stack of heavy plates. */
+[data-spec-mode="list"] .row {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+[data-spec-mode="list"] .row:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  transform: none !important;
+}
 
 .card-h, .panel-h {
   display: flex;
@@ -340,15 +658,21 @@ a { color: var(--primary); text-decoration: none; }
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 80ms ease;
+  box-shadow: var(--shadow-sm);
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms ease, box-shadow 140ms ease;
   cursor: pointer;
 }
 
 .btn:hover:not(:disabled) {
   background: var(--bg-raised);
   border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
-.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-sm);
+}
 
 .btn:disabled {
   opacity: 0.45;
@@ -359,6 +683,24 @@ a { color: var(--primary); text-decoration: none; }
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: var(--glow-cyan-soft);
+}
+.btn.primary:hover:not(:disabled) {
+  box-shadow: var(--glow-cyan);
+}
+/* Dark mode: near-black text on electric-cyan looks sharper than white */
+:root:not([data-theme="light"]) .btn.primary {
+  color: #04060b;
+}
+
+mark {
+  background: var(--primary-soft-strong);
+  color: var(--primary);
+  padding: 0 2px;
+  border-radius: 2px;
 }
 .btn.primary:hover:not(:disabled) {
   background: var(--primary-hover);
@@ -546,6 +888,10 @@ a { color: var(--primary); text-decoration: none; }
 .method.DELETE { color: var(--m-delete); background: var(--danger-soft); }
 .method.OPTIONS, .method.HEAD { color: var(--m-options); background: var(--neutral-soft); }
 
+.badge,
+.status-pill {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
 .badge {
   display: inline-flex;
   align-items: center;
@@ -612,10 +958,97 @@ a { color: var(--primary); text-decoration: none; }
   cursor: pointer;
   transition: background 140ms ease;
 }
+/* Recent-specs rows on Home — floating 3D plates. The search dropdown
+   below gets an explicit override so its rows stay flat list-style. */
+.welcome .row,
 .list.bare .row {
-  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-2);
+  box-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.45),
+    0 10px 20px rgba(0, 0, 0, 0.55),
+    0 22px 40px rgba(0, 0, 0, 0.35),
+    0 6px 16px rgba(0, 217, 255, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 140ms ease, transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
+.welcome .row:hover,
+.list.bare .row:hover {
+  background: var(--bg-raised);
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.5),
+    0 16px 32px rgba(0, 0, 0, 0.6),
+    0 36px 64px rgba(0, 0, 0, 0.4),
+    0 10px 24px rgba(0, 217, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="light"] .welcome .row,
+[data-theme="light"] .list.bare .row {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  box-shadow:
+    0 2px 4px rgba(10, 22, 41, 0.10),
+    0 10px 20px rgba(10, 22, 41, 0.10),
+    0 22px 40px rgba(10, 22, 41, 0.08),
+    0 6px 14px rgba(0, 116, 217, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+[data-theme="light"] .welcome .row:hover,
+[data-theme="light"] .list.bare .row:hover {
+  border-color: var(--primary);
+  box-shadow:
+    0 3px 6px rgba(10, 22, 41, 0.12),
+    0 14px 28px rgba(10, 22, 41, 0.14),
+    0 32px 56px rgba(10, 22, 41, 0.12),
+    0 8px 20px rgba(0, 116, 217, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Search dropdown — rows here are flat list entries, not floating plates.
+   Remove individual box-shadow/border/transform so the dropdown reads as a
+   single container with divider-separated items. */
+.search-dropdown .row {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--divider) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  padding: 12px var(--s-4);
+}
+.search-dropdown .row:last-child { border-bottom: none !important; }
+.search-dropdown .row:hover {
+  background: var(--bg-muted) !important;
+  border-color: var(--divider) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Kind tag — small pill for spec/test-case/run hits (endpoints use the
+   HTTP method pill instead). Muted, no glow, consistent with the flat
+   dropdown aesthetic. */
+.kind-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 4px 10px;
+  border-radius: var(--r-1);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.kind-tag.kind-spec { background: var(--primary-soft);  color: var(--primary); }
+.kind-tag.kind-test_case { background: var(--info-soft); color: var(--info); }
+.kind-tag.kind-run { background: var(--success-soft); color: var(--success); }
 .row:last-child { border-bottom: none; }
 .row:hover { background: var(--bg-raised); }
 
@@ -692,6 +1125,9 @@ a { color: var(--primary); text-decoration: none; }
   background: var(--primary-soft);
   color: var(--primary);
   border: none;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .tag.muted { background: var(--neutral-soft); color: var(--text-muted); }
 .tag.success { background: var(--success-soft); color: var(--success); }

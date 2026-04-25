@@ -26,7 +26,7 @@ export function openModal(opts: ModalOptions): () => void {
   );
   const head = h(
     ".modal-h",
-    h("span.accent", { style: { width: "3px", height: "14px", background: "linear-gradient(180deg,var(--cyan),var(--violet))", borderRadius: "2px" } }),
+    h("span.accent", { style: { width: "3px", height: "14px", background: "linear-gradient(180deg,var(--accent),var(--accent-2))", borderRadius: "2px" } }),
     h("h3", opts.title),
     closeBtn,
   );

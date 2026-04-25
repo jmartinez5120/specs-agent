@@ -22,8 +22,13 @@ import { revealUp } from "../motion";
 import { navigate } from "../router";
 import { store } from "../state";
 import { toast } from "../toast";
+import { renderEndpointDetail } from "../endpoint-detail";
+import type { Endpoint, LoadSpecResponse } from "../types";
 import type { SearchHit, SearchKind, SearchResult } from "../api";
 
+// Kinds exposed in the Home search dropdown. Test cases + runs are
+// intentionally excluded — noisy for the "find a spec/endpoint" use case.
+const SEARCH_KINDS: SearchKind[] = ["spec", "endpoint"];
 const KIND_ORDER: SearchKind[] = ["spec", "endpoint", "test_case", "run"];
 const KIND_LABEL: Record<SearchKind, string> = {
   spec: "Specs",
@@ -184,17 +189,10 @@ export function mountHome(container: HTMLElement): () => void {
       engage.disabled = true;
       engage.textContent = "SCANNING…";
       try {
-        const res = await loadSpec(source);
-        store.set({ spec: res.spec, specSource: source });
-        toast(
-          "IMPORTED",
-          `${res.spec.title} · ${res.spec.endpoints.length} endpoints`,
-          "success",
-        );
-        // The change-stream indexer will pick the new spec up within a
-        // second or two; no client-side cache to invalidate anymore.
+        // Preview-only load — does NOT persist to storage.
+        const res = await loadSpec(source, { save: false });
         close();
-        navigate("spec");
+        openScanPreview(res, source);
       } catch (e) {
         toast("IMPORT FAILED", (e as Error).message, "error");
         engage.disabled = false;
@@ -211,10 +209,203 @@ export function mountHome(container: HTMLElement): () => void {
     setTimeout(() => modalInput.focus(), 0);
   }
 
-  // ---------- Results container ---------- //
-  const resultsEl = h("div", {
+  // Two-step import: preview the loaded spec (parse-only, not persisted),
+  // then commit on user confirmation by re-loading with save=true.
+  function openScanPreview(res: LoadSpecResponse, source: string): void {
+    const spec = res.spec;
+    const tags = [...new Set(
+      spec.endpoints.flatMap((e) => e.tags?.length ? e.tags : ["default"]),
+    )];
+    const methods = spec.endpoints.reduce((acc, e) => {
+      acc[e.method] = (acc[e.method] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const headerStrip = h("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+        gap: "var(--s-3)",
+        marginBottom: "var(--s-4)",
+      },
+    },
+      h(".stat.accent", h(".k", "Endpoints"), h(".v", String(spec.endpoints.length))),
+      h(".stat", h(".k", "Tags"), h(".v", String(tags.length))),
+      h(".stat", h(".k", "Version"), h(".v", spec.version)),
+      h(".stat", h(".k", "Spec"), h(".v", spec.spec_version || "3.0")),
+    );
+
+    const metaRow = h("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "var(--s-3) var(--s-5)",
+        marginBottom: "var(--s-4)",
+        fontSize: "12px",
+      },
+    },
+      h("div", h(".label", "Server"), h(".mono", spec.servers?.[0]?.url || "—")),
+      h("div", h(".label", "Source"), h(".mono.muted", { style: { wordBreak: "break-all" } }, source)),
+      h("div",
+        h(".label", "Methods"),
+        h(".inline", { style: { flexWrap: "wrap", gap: "4px" } },
+          ...Object.entries(methods).map(([m, count]) =>
+            h(`span.method.${m}`, `${m} ×${count}`),
+          ),
+        ),
+      ),
+      h("div",
+        h(".label", "Tags"),
+        h(".inline", { style: { flexWrap: "wrap", gap: "4px" } },
+          ...tags.map((t) => h("span.tag", t)),
+        ),
+      ),
+    );
+
+    const detailPane = h("div", {
+      style: {
+        flex: "1 1 0",
+        minWidth: "0",
+        overflowY: "auto",
+        padding: "var(--s-4)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r-2)",
+        background: "var(--bg-muted)",
+      },
+    });
+
+    const listPane = h("div", {
+      style: {
+        flex: "0 0 420px",
+        overflowY: "auto",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r-2)",
+      },
+    });
+
+    let selectedRow: HTMLElement | null = null;
+    spec.endpoints.forEach((ep, i) => {
+      const row = h(".row", {
+        style: { cursor: "pointer" },
+        onclick: () => {
+          if (selectedRow) selectedRow.style.background = "";
+          row.style.background = "var(--bg-hover, rgba(255,255,255,0.04))";
+          selectedRow = row;
+          detailPane.innerHTML = "";
+          detailPane.appendChild(renderEndpointDetail(ep as Endpoint));
+        },
+      },
+        h(`span.method.${ep.method}`, ep.method),
+        h("div",
+          h(".path", ep.path),
+          h(".sub",
+            ep.summary || ep.operation_id || "",
+            ep.tags?.length ? `  ·  ${ep.tags.join(", ")}` : "",
+          ),
+        ),
+      );
+      listPane.appendChild(row);
+      if (i === 0) queueMicrotask(() => row.click());
+    });
+
+    const body = h("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: "0",
+      },
+    },
+      h("div", { style: { flex: "0 0 auto" } },
+        headerStrip,
+        metaRow,
+        res.warnings.length
+          ? h(".field", { style: { marginBottom: "var(--s-3)" } },
+              h("label.label", { style: { color: "var(--warning)" } },
+                `Warnings (${res.warnings.length})`),
+              ...res.warnings.map((w) =>
+                h(".sub", { style: { color: "var(--warning)" } }, w)),
+            )
+          : null as unknown as HTMLElement,
+      ),
+      h("div", {
+        style: {
+          display: "flex",
+          gap: "var(--s-3)",
+          flex: "1 1 0",
+          minHeight: "0",
+        },
+      },
+        listPane,
+        detailPane,
+      ),
+    );
+
+    const proceed = h("button.btn.primary", {
+      onclick: async () => {
+        (proceed as HTMLButtonElement).disabled = true;
+        proceed.textContent = "IMPORTING…";
+        try {
+          // Commit: re-load with save=true to actually persist.
+          const committed = await loadSpec(source, { save: true });
+          store.set({ spec: committed.spec, specSource: source });
+          toast(
+            "IMPORTED",
+            `${committed.spec.title} · ${committed.spec.endpoints.length} endpoints`,
+            "success",
+          );
+          close();
+          navigate("spec");
+        } catch (e) {
+          toast("IMPORT FAILED", (e as Error).message, "error");
+          (proceed as HTMLButtonElement).disabled = false;
+          proceed.textContent = `IMPORT → ${spec.endpoints.length} endpoints`;
+        }
+      },
+    }, `IMPORT → ${spec.endpoints.length} endpoints`) as HTMLButtonElement;
+
+    const cancel = h("button.btn.ghost", {
+      onclick: () => close(),
+    }, "Cancel");
+
+    const close = openModal({
+      title: `Preview — ${spec.title}`,
+      body,
+      actions: [cancel, proceed],
+    });
+  }
+
+  // ---------- Search dropdown (floats under the input) ---------- //
+  // Only visible while there's an active query; never displaces the content
+  // below. The Recent Specs section stays in normal flow.
+  const dropdownEl = h(".search-dropdown", {
     style: {
-      marginTop: "var(--s-4)",
+      position: "absolute",
+      top: "calc(100% + 6px)",
+      left: "0",
+      right: "0",
+      zIndex: "30",
+      display: "none",
+      flexDirection: "column",
+      gap: "var(--s-3)",
+      padding: "var(--s-4)",
+      background: "var(--bg-raised)",
+      border: "1px solid var(--border-strong)",
+      borderRadius: "var(--r-3)",
+      maxHeight: "60vh",
+      overflowY: "auto",
+      boxShadow: "var(--shadow-lg)",
+    },
+  });
+
+  // Wrap the search card in a relative container so the dropdown can
+  // position itself against it.
+  const searchWrap = h("div", { style: { position: "relative" } }, searchBar, dropdownEl);
+
+  // ---------- Recent specs (always in flow, below the search) ---------- //
+  const recentEl = h("div", {
+    style: {
+      marginTop: "var(--s-7)",
       display: "flex",
       flexDirection: "column",
       gap: "var(--s-3)",
@@ -238,8 +429,8 @@ export function mountHome(container: HTMLElement): () => void {
     "div",
     { style: { width: "100%", maxWidth: "820px", margin: "0 auto", padding: "var(--s-5)" } },
     hero,
-    searchBar,
-    resultsEl,
+    searchWrap,
+    recentEl,
   );
 
   const screen = h(".welcome", card);
@@ -271,11 +462,12 @@ export function mountHome(container: HTMLElement): () => void {
   // might arrive after the "pe" response — we discard the stale one.
   let requestSeq = 0;
 
-  // ---------- Recent specs (empty state) ---------- //
+  // ---------- Recent specs (always in flow, below the search) ---------- //
   async function renderRecent(): Promise<void> {
-    resultsEl.innerHTML = "";
-    activationOrder = [];
-    selectedIdx = 0;
+    // Clear whatever was there (initial render or re-render after edits).
+    recentEl.innerHTML = "";
+    // Hide any stale dropdown and reset keyboard-nav state.
+    hideDropdown();
 
     let recent: { id: string; title: string; source: string; source_type: string; saved_at: string }[] = [];
     try {
@@ -285,10 +477,10 @@ export function mountHome(container: HTMLElement): () => void {
     }
 
     const header = h(".muted", { style: { fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.08em" } }, "Recent specs");
-    resultsEl.appendChild(header);
+    recentEl.appendChild(header);
 
     if (!recent.length) {
-      resultsEl.appendChild(h(".muted", { style: { padding: "var(--s-3)" } }, "No saved specs yet. Import one from Spec Browser."));
+      recentEl.appendChild(h(".muted", { style: { padding: "var(--s-3)" } }, "No saved specs yet. Import one from Spec Browser."));
     } else {
       for (const s of recent) {
         const row = h(
@@ -303,16 +495,45 @@ export function mountHome(container: HTMLElement): () => void {
             h(".sub", s.source),
           ),
         );
-        resultsEl.appendChild(row);
+        recentEl.appendChild(row);
       }
     }
 
-    resultsEl.appendChild(
+    recentEl.appendChild(
       h("div", { style: { marginTop: "var(--s-3)", textAlign: "center" } },
         h("button.btn.primary", { onclick: () => navigate("spec") }, "Open Spec Browser →"),
       ),
     );
+
+    // Reveal the recent-specs children top-to-bottom once the data is in.
+    // Continues the stagger started by the hero/search animation above so
+    // the whole page reads as a single flowing top→bottom cascade.
+    revealUp(Array.from(recentEl.children) as Element[], {
+      delay: (_: Element, i: number) => 360 + i * 70,
+    });
   }
+
+  function hideDropdown(): void {
+    dropdownEl.style.display = "none";
+    dropdownEl.innerHTML = "";
+    activationOrder = [];
+    selectedIdx = 0;
+  }
+  function showDropdown(): void {
+    dropdownEl.style.display = "flex";
+    // Cap height so the dropdown never runs past the viewport bottom.
+    // Leaves a 16px breathing gap below the panel.
+    const searchRect = searchBar.getBoundingClientRect();
+    const available = window.innerHeight - searchRect.bottom - 28;
+    const cap = Math.max(180, Math.min(available, Math.floor(window.innerHeight * 0.7)));
+    dropdownEl.style.maxHeight = `${cap}px`;
+  }
+
+  // Recompute the height cap on resize so the dropdown stays bounded.
+  const onResize = () => {
+    if (dropdownEl.style.display === "flex") showDropdown();
+  };
+  window.addEventListener("resize", onResize);
 
   // ---------- Search ---------- //
   async function runSearch(q: string): Promise<void> {
@@ -324,14 +545,15 @@ export function mountHome(container: HTMLElement): () => void {
       // Ask for a generous total — we still slice per-kind client-side.
       // `TOP_N_PER_KIND * kinds.length * 2` gives us headroom to show
       // meaningful overflow counts.
-      result = await searchSpecs(q, undefined, TOP_N_PER_KIND * KIND_ORDER.length * 2);
+      result = await searchSpecs(q, SEARCH_KINDS, TOP_N_PER_KIND * SEARCH_KINDS.length * 2);
     } catch (e) {
       if (mySeq !== requestSeq) return; // stale
-      resultsEl.innerHTML = "";
+      dropdownEl.innerHTML = "";
+      showDropdown();
       const msg = (e as Error).message || "Search failed";
       // A 503 here means the backend is running in file-storage mode.
       // Show an actionable error instead of the generic toast.
-      resultsEl.appendChild(h(".muted", {
+      dropdownEl.appendChild(h(".muted", {
         style: { padding: "var(--s-3)", textAlign: "center" },
       }, `Search unavailable: ${msg}`));
       searchMeta.textContent = "error";
@@ -344,14 +566,16 @@ export function mountHome(container: HTMLElement): () => void {
     searchMeta.textContent = `${result.total} match${result.total === 1 ? "" : "es"}`;
 
     if (!result.total) {
-      resultsEl.innerHTML = "";
-      resultsEl.appendChild(h(".muted", { style: { padding: "var(--s-3)", textAlign: "center" } },
+      dropdownEl.innerHTML = "";
+      showDropdown();
+      dropdownEl.appendChild(h(".muted", { style: { padding: "var(--s-3)", textAlign: "center" } },
         "No matches — try different words."));
       activationOrder = [];
       return;
     }
 
-    resultsEl.innerHTML = "";
+    dropdownEl.innerHTML = "";
+    showDropdown();
     activationOrder = [];
 
     for (const kind of KIND_ORDER) {
@@ -382,7 +606,7 @@ export function mountHome(container: HTMLElement): () => void {
         activationOrder.push(hit);
         section.appendChild(resultRow(hit, idx));
       }
-      resultsEl.appendChild(section);
+      dropdownEl.appendChild(section);
     }
 
     selectedIdx = 0;
@@ -390,12 +614,32 @@ export function mountHome(container: HTMLElement): () => void {
   }
 
   function resultRow(hit: SearchHit, idx: number): HTMLElement {
-    // `title` / `subtitle` carry `<mark>...</mark>` wrappers from ES.
-    // We render them via innerHTML — safe per the XSS contract described
-    // at the top of this file. See converters.py in the backend for the
-    // escape-before-index path that makes this safe.
+    // `title` / `subtitle` carry `<mark>...</mark>` wrappers from ES. We
+    // render via innerHTML — safe per the XSS contract at the top of this
+    // file (backend escapes before indexing, only ES-added markup is <mark>).
+    const meta = (hit.meta ?? {}) as Record<string, unknown>;
+
+    // Left badge: method pill for endpoints, plain kind tag otherwise.
+    let badge: HTMLElement;
+    if (hit.kind === "endpoint" && typeof meta.method === "string") {
+      const method = String(meta.method).toUpperCase();
+      badge = h(`span.method.${method}`, method);
+    } else {
+      badge = h(`span.kind-tag.kind-${hit.kind}`, KIND_BADGE[hit.kind]);
+    }
+
+    // For endpoints, prefer the raw path (with highlights from the title).
+    // The backend composes title as "GET /path" — strip the leading METHOD
+    // so the row shows just the path, matching the method-pill layout.
+    let titleHtml = hit.title || "";
+    if (hit.kind === "endpoint" && typeof meta.method === "string") {
+      const method = String(meta.method).toUpperCase();
+      const prefix = `${method} `;
+      if (titleHtml.startsWith(prefix)) titleHtml = titleHtml.slice(prefix.length);
+    }
+
     const titleEl = h(".path");
-    titleEl.innerHTML = hit.title || "";
+    titleEl.innerHTML = titleHtml;
     const subEl = h(".sub");
     subEl.innerHTML = hit.subtitle || "";
 
@@ -410,14 +654,14 @@ export function mountHome(container: HTMLElement): () => void {
           updateSelection();
         },
       },
-      h("span.tag", KIND_BADGE[hit.kind]),
+      badge,
       h("div", titleEl, subEl),
     );
     return row;
   }
 
   function updateSelection(): void {
-    const rows = resultsEl.querySelectorAll<HTMLElement>(".row[data-idx]");
+    const rows = dropdownEl.querySelectorAll<HTMLElement>(".row[data-idx]");
     rows.forEach((r) => {
       const idx = Number(r.getAttribute("data-idx"));
       r.style.background = idx === selectedIdx ? "var(--bg-hover, rgba(255,255,255,0.06))" : "";
@@ -483,9 +727,20 @@ export function mountHome(container: HTMLElement): () => void {
     const q = input.value.trim();
     window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(() => {
-      if (!q) renderRecent();
+      if (!q) hideDropdown();
       else runSearch(q);
     }, DEBOUNCE_MS);
+  });
+
+  // Dismiss dropdown on Escape or when clicking outside the search wrap.
+  input.addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Escape") {
+      input.value = "";
+      hideDropdown();
+    }
+  });
+  document.addEventListener("mousedown", (e) => {
+    if (!searchWrap.contains(e.target as Node)) hideDropdown();
   });
 
   input.addEventListener("keydown", (e) => {
@@ -512,5 +767,6 @@ export function mountHome(container: HTMLElement): () => void {
   return () => {
     sub();
     window.clearTimeout(debounceTimer);
+    window.removeEventListener("resize", onResize);
   };
 }
