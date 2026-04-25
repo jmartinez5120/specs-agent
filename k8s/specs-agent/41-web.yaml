@@ -59,11 +59,14 @@ metadata:
     app.kubernetes.io/name: specs-agent-web
     app.kubernetes.io/part-of: specs-agent-platform
 spec:
-  type: ClusterIP
+  # NodePort so the UI is reachable as http://<any-node-ip>:30765 without
+  # going through Ingress / DNS. The Ingress also still works on :80.
+  type: NodePort
   ports:
     - name: http
       port: 80
       targetPort: 80
+      nodePort: 30765
   selector:
     app.kubernetes.io/name: specs-agent-web
 ---

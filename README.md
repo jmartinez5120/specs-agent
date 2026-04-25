@@ -201,6 +201,34 @@ python -m pytest tests/test_reporting/ -v     # HTML report generation
 python -m pytest tests/test_e2e_live.py -v    # Live API tests (needs server at localhost:8080)
 ```
 
+## Documentation
+
+The repo ships full architecture, infrastructure, and deployment docs under
+[`docs/`](docs/):
+
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — system design, data
+  flow, components, AI provider abstraction, multi-tenancy posture
+- **[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md)** — K3s cluster
+  topology, registry, DNS, storage, NetworkPolicy notes
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — build images, push,
+  apply manifests, verify, troubleshoot
+- **[docs/SECURITY.md](docs/SECURITY.md)** — secret hygiene, what's in
+  git and what isn't, threat model, gaps
+- **[k8s/specs-agent/README.md](k8s/specs-agent/README.md)** — manifest-by-manifest reference
+- **[CLAUDE.md](CLAUDE.md)** — implementation notes for code agents
+
+## Deployment surfaces
+
+```
+local TUI ──── pip install -e . ────────────────── runs against ~/.specs-agent/
+docker        docker compose up ───────────────── single host, full stack
+K3s           kubectl apply -f k8s/specs-agent/ ── 6 pods across 5 nodes
+```
+
+The K3s deploy runs as a multi-replica web + API + Mongo (rs0) +
+Elasticsearch stack with HPA, NetworkPolicy, and Traefik Ingress. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) to roll one out.
+
 ## Dependencies
 
 - `textual` >= 1.0 — TUI framework with mouse support

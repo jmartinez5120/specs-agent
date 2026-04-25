@@ -158,7 +158,26 @@ Screen tests use Textual's async pilot: `async with app.run_test(size=(120, 40))
   - Storage abstraction: introduce a `Storage` interface with `FileStorage` (current) and `MongoStorage` implementations — engine picks one based on env/config.
   - Docker image builds the engine + both UIs; `docker compose up` launches MongoDB + the app with web UI exposed on a port.
   - **Search: Elasticsearch + real-time indexing**. `docker-compose.yml` also runs ES 8.x (single-node, security disabled for dev) and Mongo is a single-node replica set (`rs0`) with a one-shot `mongo-init` sidecar. All writes land in Mongo; a change-stream tailer mirrors them into ES. See the "Search" subsection above for the package layout. The `POST /search` route only activates in mongo-storage mode — file storage returns 503.
-- **MVP 9** (planned): External MongoDB support — connection string config, auth, TLS, ability to point the dockerized engine at an existing MongoDB cluster instead of the bundled one.
+- **MVP 9** (planned): Real multi-tenancy — OIDC proxy, per-user config overrides via the existing `X-User-Id` plumbing, `/admin/config` route for server defaults, per-tenant K8s namespaces parameterised through Kustomize/Helm. External MongoDB support (connection string, TLS, auth) lands here too.
+
+## Deployment & infra
+
+End-user docs live in [`docs/`](docs/) — keep them in sync when shipping
+changes to manifests, secrets handling, or the architecture:
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design + component map
+- [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) — K3s cluster, registry, DNS, storage
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — build / push / apply / verify / troubleshoot
+- [docs/SECURITY.md](docs/SECURITY.md) — secret hygiene + threat model
+- [k8s/specs-agent/README.md](k8s/specs-agent/README.md) — manifest reference
+
+The K3s reference cluster is `192.168.0.100` (knode1.m2cl.com), 5 ARM64
+Pi nodes. Mongo is pinned to `4.4.18` (the cluster lacks ARMv8.2-A
+required by `5.0+` and `4.4.19+`). Init Job uses the legacy `mongo`
+shell, not `mongosh` (not bundled in 4.4 image), and must carry
+`app.kubernetes.io/name: mongodb-init` so the NetworkPolicy lets it
+reach mongod. Real Secrets are created via `kubectl create secret`,
+never committed (`k8s/specs-agent/.gitignore` enforces this).
 
 ## File Map (key files)
 
@@ -180,4 +199,19 @@ src/specs_agent/
   search/converters.py           # spec_to_docs, plan_to_test_case_docs, run_to_doc (HTML-escape)
   search/indexer.py              # Indexer: backfill + Mongo change-stream tailer
   search/service.py              # search(q, kinds, limit): multi_match + highlights
+  ai/anthropic_backend.py        # Claude Messages API client (anthropic SDK)
+  ai/openai_backend.py           # ChatGPT Chat Completions client (openai SDK)
+  ai/generator.py                # provider dispatch: _resolve_provider, _active_remote_backend
+  api/converters.py              # mask_secret(), merge_config_preserving_secrets()
+
+k8s/specs-agent/                 # K3s deployment manifests (numbered apply order)
+  00-namespace.yaml              # namespace + tenancy labels
+  10-mongodb.yaml                # StatefulSet (rs0) + headless Service + init Job
+  11-elasticsearch.yaml          # StatefulSet + Service
+  20-secret.example.yaml         # template only — real Secret created via kubectl
+  30-configmap.yaml              # non-sensitive runtime config
+  40-api.yaml                    # Deployment x2 + Service + HPA + ServiceAccount
+  41-web.yaml                    # Deployment x2 + Service (NodePort 30765) + nginx ConfigMap
+  50-ingress.yaml                # Traefik Ingress on :80
+  60-network-policy.yaml         # mongo + ES accept ingress only from API/init pods
 ```
