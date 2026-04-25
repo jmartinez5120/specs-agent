@@ -44,10 +44,13 @@ export async function health(): Promise<{ status: string; service: string }> {
 // Specs
 // ------------------------------------------------------------------ //
 
-export async function loadSpec(source: string): Promise<LoadSpecResponse> {
+export async function loadSpec(
+  source: string,
+  opts: { save?: boolean } = {},
+): Promise<LoadSpecResponse> {
   return req("/specs/load", {
     method: "POST",
-    body: JSON.stringify({ source }),
+    body: JSON.stringify({ source, save: opts.save ?? true }),
   });
 }
 
@@ -346,6 +349,35 @@ export async function clearAICache(): Promise<{ cleared: number }> {
 
 export async function getAIPresets(): Promise<Record<string, unknown>[]> {
   return req("/ai/presets");
+}
+
+export interface AIModel {
+  id: string;
+  display_name: string;
+}
+
+export interface AIModelsResponse {
+  models: AIModel[];
+  /** "live" | "fallback" | "fallback_empty" | "presets" | "no_credentials" | "no_base_url" */
+  source: string;
+  error?: string;
+}
+
+/** Ask the backend to fetch a provider's model catalog. The backend proxies
+ *  the call so the user's API key never crosses origins. */
+export async function listAIModels(
+  provider: string,
+  apiKey?: string,
+  baseUrl?: string,
+): Promise<AIModelsResponse> {
+  return req<AIModelsResponse>("/ai/models", {
+    method: "POST",
+    body: JSON.stringify({
+      provider,
+      api_key: apiKey || "",
+      base_url: baseUrl || "",
+    }),
+  });
 }
 
 // ------------------------------------------------------------------ //

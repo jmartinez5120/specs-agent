@@ -7,7 +7,14 @@
 // PUT /config, an empty string for an *_api_key means "leave unchanged".
 
 import { aiIcon } from "../ai-icon";
-import { clearAICache, getAIPresets, getAIStatus, getConfig, putConfig } from "../api";
+import {
+  clearAICache,
+  getAIPresets,
+  getAIStatus,
+  getConfig,
+  listAIModels,
+  putConfig,
+} from "../api";
 import { h } from "../dom";
 import { toast } from "../toast";
 import type { AIProvider, AppConfig } from "../types";
@@ -108,17 +115,13 @@ export function buildAISettingsPanel(): HTMLElement {
 
   // Anthropic fields --------------------------------------------------
   let anthropicKey = passwordField("", "sk-ant-...");
-  const anthropicModelInput = h("input.input.mono", {
-    type: "text",
-    placeholder: "claude-haiku-4-5",
-  }) as HTMLInputElement;
+  const anthropicModelSelect = h("select.select") as HTMLSelectElement;
+  const anthropicModelHint = h(".muted.mono", { style: { fontSize: "11px" } }, "");
 
   // OpenAI fields -----------------------------------------------------
   let openaiKey = passwordField("", "sk-...");
-  const openaiModelInput = h("input.input.mono", {
-    type: "text",
-    placeholder: "gpt-4o-mini",
-  }) as HTMLInputElement;
+  const openaiModelSelect = h("select.select") as HTMLSelectElement;
+  const openaiModelHint = h(".muted.mono", { style: { fontSize: "11px" } }, "");
   const openaiBaseUrlInput = h("input.input.mono", {
     type: "text",
     placeholder: "https://api.openai.com (leave blank for default)",
@@ -135,20 +138,38 @@ export function buildAISettingsPanel(): HTMLElement {
     placeholder: "llama3.1:8b",
   }) as HTMLInputElement;
 
-  // Test-connection helper — points at the same /ai/status endpoint that
-  // the rest of the app uses; we don't try to validate before save.
+  // Test-connection helper — points at /ai/status which reflects the SAVED
+  // config. If the user is editing fields without saving, the result reflects
+  // the old state, not the form. Detect that and tell them clearly.
   const testBtn = (): HTMLButtonElement => h("button.btn.sm.ghost", {
     type: "button",
     onclick: async () => {
       try {
-        const status = await getAIStatus();
+        const [status, savedConfig] = await Promise.all([getAIStatus(), getConfig()]);
+        const savedProvider = (savedConfig.ai_provider as string | undefined)
+          || (savedConfig.ai_backend as string | undefined)
+          || "local_gguf";
+        const formChanged = activeProvider !== savedProvider
+          || anthropicKey.isDirty()
+          || openaiKey.isDirty()
+          || httpKey.isDirty();
+
+        if (formChanged) {
+          toast(
+            "UNSAVED CHANGES",
+            `Form is set to "${activeProvider}" but the saved provider is "${savedProvider}". Click "Save AI settings" first, then re-test.`,
+            "default",
+          );
+          return;
+        }
+
         const ok = !!status.available;
         const provider = (status.provider as string | undefined) || activeProvider;
         toast(
           ok ? "OK" : "UNAVAILABLE",
           ok
             ? `Provider "${provider}" reachable.`
-            : `Provider "${provider}" not reachable. Save changes first, then re-test.`,
+            : `Provider "${provider}" is configured but not reachable. Check the API key and model name.`,
           ok ? "success" : "error",
         );
       } catch (e) {
@@ -159,6 +180,76 @@ export function buildAISettingsPanel(): HTMLElement {
 
   function field(label: string, ...kids: (HTMLElement | string)[]): HTMLElement {
     return h(".field", h("label.label", label), ...kids);
+  }
+
+  /** Make sure `select` has an <option> with the given value, preserving the
+   *  current selection when refreshing the list. If the saved id isn't in the
+   *  options yet, prepend it as "(saved) <id>" so the user always sees what
+   *  the server has stored. */
+  function ensureSavedOption(select: HTMLSelectElement, savedId: string): void {
+    if (!savedId) return;
+    const has = Array.from(select.options).some((o) => o.value === savedId);
+    if (!has) {
+      const opt = h("option", { value: savedId }, `(saved) ${savedId}`) as HTMLOptionElement;
+      select.insertBefore(opt, select.firstChild);
+    }
+    select.value = savedId;
+  }
+
+  /** Replace the dropdown's options with a fresh list, preserving selection. */
+  function setSelectOptions(
+    select: HTMLSelectElement,
+    models: { id: string; display_name: string }[],
+    keepSelected: string,
+  ): void {
+    select.innerHTML = "";
+    for (const m of models) {
+      const label = m.display_name && m.display_name !== m.id ? `${m.display_name} (${m.id})` : m.id;
+      select.appendChild(h("option", { value: m.id }, label));
+    }
+    if (keepSelected) ensureSavedOption(select, keepSelected);
+  }
+
+  /** Hit /ai/models for the given provider, using the *current form values*
+   *  (so the user can preview a key before saving). Updates the matching
+   *  dropdown + hint in place. */
+  async function refreshModels(provider: "anthropic" | "openai" | "openai_compatible"): Promise<void> {
+    const select = provider === "anthropic" ? anthropicModelSelect : openaiModelSelect;
+    const hint = provider === "anthropic" ? anthropicModelHint : openaiModelHint;
+    const keep = select.value;
+    // Use the form's value if the user has typed/pasted a fresh key; the
+    // backend falls back to the saved key when we send empty string.
+    const apiKey =
+      provider === "anthropic"
+        ? (anthropicKey.isDirty() ? anthropicKey.input.value : "")
+        : provider === "openai"
+        ? (openaiKey.isDirty() ? openaiKey.input.value : "")
+        : (httpKey.isDirty() ? httpKey.input.value : "");
+    const baseUrl = provider === "openai" ? openaiBaseUrlInput.value : "";
+
+    hint.textContent = "Fetching models…";
+    try {
+      const result = await listAIModels(provider, apiKey, baseUrl);
+      setSelectOptions(select, result.models, keep);
+      hint.textContent =
+        result.source === "live"
+          ? `${result.models.length} models from provider · refreshed`
+          : result.source === "no_credentials"
+          ? "Add an API key to fetch the live list. Showing well-known defaults."
+          : result.source === "fallback"
+          ? `Could not reach provider — showing defaults. (${result.error || ""})`.trim()
+          : `Showing defaults (${result.source}).`;
+    } catch (e) {
+      hint.textContent = `Refresh failed: ${(e as Error).message}`;
+    }
+  }
+
+  function refreshBtn(provider: "anthropic" | "openai"): HTMLButtonElement {
+    return h("button.btn.sm.ghost", {
+      type: "button",
+      onclick: () => void refreshModels(provider),
+      title: "Re-fetch from provider",
+    }, "Refresh") as HTMLButtonElement;
   }
 
   function renderProviderPanel() {
@@ -180,9 +271,12 @@ export function buildAISettingsPanel(): HTMLElement {
             h(".muted.mono", { style: { fontSize: "11px", marginTop: "var(--s-1)" } },
               "Stored server-side. Leave field as-is to keep the existing key."),
           ),
-          field("Model", anthropicModelInput,
-            h(".muted.mono", { style: { fontSize: "11px", marginTop: "var(--s-1)" } },
-              "Default: claude-haiku-4-5"),
+          field("Model",
+            h(".inline", { style: { gap: "var(--s-2)" } },
+              anthropicModelSelect,
+              refreshBtn("anthropic"),
+            ),
+            anthropicModelHint,
           ),
           h(".inline", { style: { marginTop: "var(--s-3)" } }, testBtn()),
         ),
@@ -194,9 +288,12 @@ export function buildAISettingsPanel(): HTMLElement {
             h(".muted.mono", { style: { fontSize: "11px", marginTop: "var(--s-1)" } },
               "Stored server-side. Leave field as-is to keep the existing key."),
           ),
-          field("Model", openaiModelInput,
-            h(".muted.mono", { style: { fontSize: "11px", marginTop: "var(--s-1)" } },
-              "Default: gpt-4o-mini"),
+          field("Model",
+            h(".inline", { style: { gap: "var(--s-2)" } },
+              openaiModelSelect,
+              refreshBtn("openai"),
+            ),
+            openaiModelHint,
           ),
           field("Base URL (optional)", openaiBaseUrlInput,
             h(".muted.mono", { style: { fontSize: "11px", marginTop: "var(--s-1)" } },
@@ -248,10 +345,10 @@ export function buildAISettingsPanel(): HTMLElement {
       if (!Number.isNaN(nGpu)) config.ai_n_gpu_layers = nGpu;
       config.ai_model_path = modelPathInput.value;
       // Anthropic
-      config.ai_anthropic_model = anthropicModelInput.value || "claude-haiku-4-5";
+      config.ai_anthropic_model = anthropicModelSelect.value || "claude-haiku-4-5";
       config.ai_anthropic_api_key = anthropicKey.isDirty() ? anthropicKey.input.value : "";
       // OpenAI
-      config.ai_openai_model = openaiModelInput.value || "gpt-4o-mini";
+      config.ai_openai_model = openaiModelSelect.value || "gpt-4o-mini";
       config.ai_openai_base_url = openaiBaseUrlInput.value;
       config.ai_openai_api_key = openaiKey.isDirty() ? openaiKey.input.value : "";
       // OpenAI-compatible
@@ -315,11 +412,20 @@ export function buildAISettingsPanel(): HTMLElement {
       nGpuLayersInput.value = String(config.ai_n_gpu_layers ?? 0);
       modelPathInput.value = config.ai_model_path || "";
 
-      anthropicModelInput.value = config.ai_anthropic_model || "";
-      openaiModelInput.value = config.ai_openai_model || "";
+      // Set the saved model into each dropdown (rendered options come from
+      // refreshModels() — the saved value is preserved if present, else
+      // selected as a one-off "(saved) <id>" option so it doesn't disappear
+      // when the live list omits it.
+      ensureSavedOption(anthropicModelSelect, config.ai_anthropic_model || "");
+      ensureSavedOption(openaiModelSelect, config.ai_openai_model || "");
       openaiBaseUrlInput.value = config.ai_openai_base_url || "";
       httpBaseUrlInput.value = config.ai_http_base_url || "";
       httpModelInput.value = config.ai_http_model || "";
+
+      // Kick off live model fetches in the background — these update the
+      // dropdowns once the provider's API answers.
+      void refreshModels("anthropic");
+      void refreshModels("openai");
 
       // Rebuild password fields so their "initial" baseline is the masked
       // value just returned by the server — that's the value we treat as

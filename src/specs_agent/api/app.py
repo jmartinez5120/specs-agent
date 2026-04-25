@@ -87,6 +87,20 @@ class SearchRequest(BaseModel):
     limit: int = Field(30, ge=1, le=200)
 
 
+class ListAIModelsRequest(BaseModel):
+    """POST /ai/models body — fetch the live model catalog from a provider.
+
+    `api_key` and `base_url` are optional; when omitted, the saved config
+    values are used. This lets the AI Settings UI populate a model dropdown
+    without forcing the user to save a half-edited form first. Provided
+    values are NOT persisted.
+    """
+
+    provider: str = Field(..., description="local_gguf|anthropic|openai|openai_compatible")
+    api_key: str = Field("", description="Override saved key. Empty → use saved.")
+    base_url: str = Field("", description="Override saved base URL (openai / openai_compat).")
+
+
 def _storage_is_mongo() -> bool:
     """Search + change-stream indexing only make sense with MongoStorage.
 
@@ -555,6 +569,96 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     async def ai_presets() -> list[dict]:
         from specs_agent.ai.models import get_preset_info
         return get_preset_info()
+
+    @app.post("/ai/models")
+    async def ai_models(req: ListAIModelsRequest, eng: Engine = Depends(get_engine)) -> dict:
+        """Proxy the provider's models endpoint so the UI never needs to ship
+        the user's API key cross-origin.
+
+        Returns: {"models": [{"id": str, "display_name": str}], "source": str}
+        - source="live": fetched from the provider's API just now
+        - source="fallback": provider didn't answer, returning a static set
+        - source="presets": provider="local_gguf" — bundled GGUF presets
+        """
+        config = eng.load_config()
+        provider = req.provider
+
+        if provider == "local_gguf":
+            from specs_agent.ai.models import get_preset_info
+            presets = get_preset_info()
+            return {
+                "models": [
+                    {"id": p["name"], "display_name": p.get("description") or p["name"]}
+                    for p in presets
+                ],
+                "source": "presets",
+            }
+
+        # Resolve credentials — request body overrides saved config
+        if provider == "anthropic":
+            key = req.api_key or config.ai_anthropic_api_key
+            url = "https://api.anthropic.com/v1/models"
+            headers = {
+                "x-api-key": key,
+                "anthropic-version": "2023-06-01",
+            }
+            fallback = [
+                {"id": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5"},
+                {"id": "claude-sonnet-4-5", "display_name": "Claude Sonnet 4.5"},
+                {"id": "claude-opus-4-7", "display_name": "Claude Opus 4.7"},
+            ]
+        elif provider == "openai":
+            key = req.api_key or config.ai_openai_api_key
+            base = (req.base_url or config.ai_openai_base_url or "https://api.openai.com/v1").rstrip("/")
+            url = f"{base}/models"
+            headers = {"Authorization": f"Bearer {key}"}
+            fallback = [
+                {"id": "gpt-4o", "display_name": "GPT-4o"},
+                {"id": "gpt-4o-mini", "display_name": "GPT-4o mini"},
+                {"id": "gpt-4-turbo", "display_name": "GPT-4 Turbo"},
+                {"id": "gpt-3.5-turbo", "display_name": "GPT-3.5 Turbo"},
+            ]
+        elif provider == "openai_compatible":
+            key = req.api_key or config.ai_http_api_key
+            base = (req.base_url or config.ai_http_base_url or "").rstrip("/")
+            if not base:
+                return {"models": [], "source": "no_base_url"}
+            url = f"{base}/models"
+            headers = {"Authorization": f"Bearer {key}"} if key else {}
+            fallback = []
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+
+        if not key and provider in ("anthropic", "openai"):
+            return {"models": fallback, "source": "no_credentials"}
+
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+            # Anthropic and OpenAI both return {"data": [...]} with each entry
+            # having an "id". Anthropic adds "display_name"; OpenAI doesn't.
+            data = payload.get("data") or payload.get("models") or []
+            models = []
+            for entry in data:
+                if not isinstance(entry, dict):
+                    continue
+                mid = entry.get("id") or entry.get("name")
+                if not mid:
+                    continue
+                display = entry.get("display_name") or mid
+                models.append({"id": mid, "display_name": display})
+            if not models:
+                return {"models": fallback, "source": "fallback_empty"}
+            # Sort: most-recent-first if the API gives a created/updated date,
+            # otherwise alphabetical descending so newer-named models float up.
+            models.sort(key=lambda m: m["id"], reverse=True)
+            return {"models": models, "source": "live"}
+        except Exception as exc:
+            log.warning("ai/models fetch failed for %s: %s", provider, exc)
+            return {"models": fallback, "source": "fallback", "error": str(exc)}
 
     # ------------------------------------------------------------------ #
     # WebSocket: live plan generation (with progress)
