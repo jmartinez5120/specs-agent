@@ -1,0 +1,136 @@
+# MongoDB 7 — single-node replica set (rs0).
+#
+# Why a replica set on one node: the search indexer tails change streams,
+# which require a replica set even when there's only one member. This
+# matches the docker-compose dev setup so the same code runs in both.
+#
+# Storage: 10Gi PVC on the default local-path storage class. For real HA
+# scale this StatefulSet to 3 replicas, switch to longhorn/rook for
+# distributed storage, and rewrite the rs0 init Job to reference all three
+# pods. Single-node is enough for a shared dev/test ecosystem.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: mongodb
+    app.kubernetes.io/part-of: specs-agent-platform
+spec:
+  clusterIP: None  # headless — StatefulSet needs stable DNS per pod
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+  selector:
+    app.kubernetes.io/name: mongodb
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: mongodb
+    app.kubernetes.io/part-of: specs-agent-platform
+spec:
+  serviceName: mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mongodb
+        app.kubernetes.io/part-of: specs-agent-platform
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: mongod
+          image: mongo:7
+          imagePullPolicy: IfNotPresent
+          args: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+          ports:
+            - containerPort: 27017
+              name: mongo
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand('ping').ok"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand('ping').ok"
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: local-path
+---
+# One-shot init: idempotently calls rs.initiate(). Restart strategy is
+# OnFailure; once the replica set is up, the job exits 0 and stays Done.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongo-init
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: mongodb-init
+    app.kubernetes.io/part-of: specs-agent-platform
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: mongo:7
+          imagePullPolicy: IfNotPresent
+          command:
+            - bash
+            - -c
+            - |
+              set -e
+              echo "[mongo-init] waiting for mongod..."
+              until mongosh --host mongo-0.mongo.specs-agent.svc.cluster.local:27017 \
+                --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; do
+                sleep 2
+              done
+              echo "[mongo-init] mongod is up; ensuring replica set rs0..."
+              mongosh --host mongo-0.mongo.specs-agent.svc.cluster.local:27017 --quiet --eval '
+                try {
+                  rs.status();
+                  print("[mongo-init] replica set already initialized");
+                } catch (e) {
+                  print("[mongo-init] initiating replica set...");
+                  rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongo-0.mongo.specs-agent.svc.cluster.local:27017" }] });
+                }
+              '
+              echo "[mongo-init] done"

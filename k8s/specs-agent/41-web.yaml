@@ -1,0 +1,122 @@
+# specs-agent Web — static SPA served by nginx, with /api proxied to the API.
+#
+# The web image is built from web/ via a small multi-stage Dockerfile that
+# bundles the Vite output and ships it with nginx. The proxy config rewrites
+# /api/* and /ws/* to the in-cluster API service.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: specs-agent-web-nginx
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent-web
+data:
+  default.conf: |
+    server {
+      listen 80 default_server;
+      server_name _;
+      root /usr/share/nginx/html;
+      index index.html;
+
+      # SPA fallback
+      location / {
+        try_files $uri $uri/ /index.html;
+      }
+
+      # API + WebSocket proxy
+      location /api/ {
+        proxy_pass http://specs-agent-api.specs-agent.svc.cluster.local:8765/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+      }
+
+      location /ws/ {
+        proxy_pass http://specs-agent-api.specs-agent.svc.cluster.local:8765/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+      }
+
+      # Health endpoint at root for Ingress probes
+      location /healthz {
+        access_log off;
+        return 200 'ok';
+        add_header Content-Type text/plain;
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: specs-agent-web
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent-web
+    app.kubernetes.io/part-of: specs-agent-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app.kubernetes.io/name: specs-agent-web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: specs-agent-web
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent-web
+    app.kubernetes.io/part-of: specs-agent-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: specs-agent-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: specs-agent-web
+        app.kubernetes.io/part-of: specs-agent-platform
+    spec:
+      containers:
+        - name: web
+          image: 192.168.0.100:30500/specs-agent-web:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/specs-agent.conf
+              subPath: default.conf
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: specs-agent-web-nginx

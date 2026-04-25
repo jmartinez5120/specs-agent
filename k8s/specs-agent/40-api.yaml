@@ -1,0 +1,145 @@
+# specs-agent API — FastAPI + WebSocket backend.
+#
+# Two replicas to demonstrate horizontal scale. WebSocket sticky sessions
+# are not required: each WS is a single connection that lives for the
+# duration of one execution; if a pod dies mid-run the client reconnects
+# and starts fresh (the run state is in Mongo).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: specs-agent-api
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent-api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: specs-agent-api
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent-api
+    app.kubernetes.io/part-of: specs-agent-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8765
+      targetPort: 8765
+  selector:
+    app.kubernetes.io/name: specs-agent-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: specs-agent-api
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent-api
+    app.kubernetes.io/part-of: specs-agent-platform
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: specs-agent-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: specs-agent-api
+        app.kubernetes.io/part-of: specs-agent-platform
+    spec:
+      serviceAccountName: specs-agent-api
+      # Wait for Mongo to be reachable before the API container boots —
+      # the FastAPI lifespan fails fast if Mongo or ES isn't up.
+      initContainers:
+        - name: wait-for-deps
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for mongo..."
+              until nc -z mongo.specs-agent.svc.cluster.local 27017; do sleep 2; done
+              echo "Waiting for elasticsearch..."
+              until nc -z elasticsearch.specs-agent.svc.cluster.local 9200; do sleep 2; done
+              echo "Dependencies up."
+      containers:
+        - name: api
+          image: 192.168.0.100:30500/specs-agent-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8765
+              name: http
+          envFrom:
+            - configMapRef:
+                name: specs-agent-config
+          env:
+            # Secrets land as individual env vars and are remapped in-process
+            # to the SPECS_AGENT_AI_* names AppConfig expects.
+            - name: SPECS_AGENT_AI_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: specs-agent-ai-keys
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            - name: SPECS_AGENT_AI_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: specs-agent-ai-keys
+                  key: OPENAI_API_KEY
+                  optional: true
+            - name: SPECS_AGENT_AI_HTTP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: specs-agent-ai-keys
+                  key: HTTP_API_KEY
+                  optional: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 30
+            periodSeconds: 20
+---
+# Horizontal autoscaler — scales between 2 and 6 replicas based on CPU.
+# Demonstrates "this scales for an enterprise" without needing real load.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: specs-agent-api
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: specs-agent-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

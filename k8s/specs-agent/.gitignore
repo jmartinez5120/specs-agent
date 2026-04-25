@@ -1,0 +1,4 @@
+# Never commit real Secrets to git. Only the *.example.yaml templates.
+20-secret.yaml
+*-secret.yaml
+!*-secret.example.yaml

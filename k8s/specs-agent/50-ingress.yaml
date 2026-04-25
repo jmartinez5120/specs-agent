@@ -1,0 +1,43 @@
+# Traefik Ingress — exposes the Web UI (which proxies to the API).
+#
+# Hostname: specs-agent.m2cl.local. Add an /etc/hosts entry pointing to the
+# cluster's Traefik load balancer IP, OR rely on the *.m2cl.com wildcard if
+# DNS for the cluster already resolves elsewhere on the LAN.
+#
+# For TLS: drop a Secret with `tls.crt` / `tls.key` and reference it in
+# `tls:`. cert-manager + Let's Encrypt is the path for prod — out of scope
+# for this initial cut.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: specs-agent
+  namespace: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent
+    app.kubernetes.io/part-of: specs-agent-platform
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: specs-agent.m2cl.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: specs-agent-web
+                port:
+                  number: 8080
+    # Convenience: also expose under /specs-agent on the bare cluster IP
+    # so you can hit it without a DNS entry while doing initial testing.
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: specs-agent-web
+                port:
+                  number: 8080

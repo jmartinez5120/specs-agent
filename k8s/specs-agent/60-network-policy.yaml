@@ -1,0 +1,55 @@
+# NetworkPolicy — east-west isolation inside the namespace.
+#
+# Mongo + Elasticsearch only accept traffic from the API pods. Web pods
+# never need direct database access (everything goes through the API).
+# Ingress traffic to the Web (and through it to the API) is unrestricted
+# at the Service layer — Traefik handles the LAN edge.
+#
+# Note: K3s ships with flannel by default which doesn't enforce
+# NetworkPolicy out of the box. If your cluster uses Calico/Cilium these
+# rules become real; on flannel they're advisory documentation that
+# becomes enforceable once you install a CNI policy plugin.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mongo-from-api-only
+  namespace: specs-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: specs-agent-api
+        # Allow the init Job to reach mongod
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mongodb-init
+      ports:
+        - protocol: TCP
+          port: 27017
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: elasticsearch-from-api-only
+  namespace: specs-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: elasticsearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: specs-agent-api
+      ports:
+        - protocol: TCP
+          port: 9200

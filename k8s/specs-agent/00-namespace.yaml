@@ -1,0 +1,15 @@
+# specs-agent — dedicated namespace for the multi-tenant deployment.
+#
+# Labels follow the Kubernetes recommended labels schema so monitoring and
+# policy systems can target this app generically. The `tenant` label is
+# intentionally generic (`shared`) — when the enterprise overlay lands,
+# per-team workloads live in their own namespaces with `tenant: <team>`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: specs-agent
+  labels:
+    app.kubernetes.io/name: specs-agent
+    app.kubernetes.io/part-of: specs-agent-platform
+    app.kubernetes.io/managed-by: kubectl
+    tenant: shared
