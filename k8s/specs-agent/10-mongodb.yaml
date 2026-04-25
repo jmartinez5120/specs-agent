@@ -1,4 +1,9 @@
-# MongoDB 7 — single-node replica set (rs0).
+# MongoDB 4.4 — single-node replica set (rs0).
+#
+# Why 4.4 (not 7+): the K3s cluster runs on Raspberry Pi (ARMv8-A).
+# Mongo 5.0+ and 4.4.19+ require ARMv8.2-A and crash on Pi hardware
+# (see SERVER-71772). 4.4.x stays compatible. Change streams (the
+# feature we actually need) have been GA since 3.6, so 4.4 is fine.
 #
 # Why a replica set on one node: the search indexer tails change streams,
 # which require a replica set even when there's only one member. This
@@ -49,7 +54,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: mongod
-          image: mongo:7
+          image: mongo:4.4.18
           imagePullPolicy: IfNotPresent
           args: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
           ports:
@@ -62,24 +67,22 @@ spec:
             limits:
               cpu: "2"
               memory: 2Gi
+          # mongosh startup on a Raspberry Pi is ~3-5s. The default probe
+          # timeoutSeconds=1 kills the container in a probe loop.
           readinessProbe:
-            exec:
-              command:
-                - mongosh
-                - --quiet
-                - --eval
-                - "db.adminCommand('ping').ok"
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          livenessProbe:
-            exec:
-              command:
-                - mongosh
-                - --quiet
-                - --eval
-                - "db.adminCommand('ping').ok"
+            tcpSocket:
+              port: 27017
             initialDelaySeconds: 30
-            periodSeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - name: data
               mountPath: /data/db
@@ -107,11 +110,16 @@ spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 6
   template:
+    metadata:
+      # Required for the NetworkPolicy that allows init→mongo on 27017.
+      labels:
+        app.kubernetes.io/name: mongodb-init
+        app.kubernetes.io/part-of: specs-agent-platform
     spec:
       restartPolicy: OnFailure
       containers:
         - name: init
-          image: mongo:7
+          image: mongo:4.4.18
           imagePullPolicy: IfNotPresent
           command:
             - bash
@@ -119,16 +127,19 @@ spec:
             - |
               set -e
               echo "[mongo-init] waiting for mongod..."
-              until mongosh --host mongo-0.mongo.specs-agent.svc.cluster.local:27017 \
+              until mongo --host mongo-0.mongo.specs-agent.svc.cluster.local:27017 \
                 --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; do
                 sleep 2
               done
               echo "[mongo-init] mongod is up; ensuring replica set rs0..."
-              mongosh --host mongo-0.mongo.specs-agent.svc.cluster.local:27017 --quiet --eval '
-                try {
-                  rs.status();
+              # Note: in the legacy mongo shell rs.status() returns
+              # {ok:0, codeName:"NotYetInitialized"} — it does NOT throw.
+              # So we must check .ok explicitly, not rely on try/catch.
+              mongo --host mongo-0.mongo.specs-agent.svc.cluster.local:27017 --quiet --eval '
+                var s = rs.status();
+                if (s.ok === 1) {
                   print("[mongo-init] replica set already initialized");
-                } catch (e) {
+                } else {
                   print("[mongo-init] initiating replica set...");
                   rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongo-0.mongo.specs-agent.svc.cluster.local:27017" }] });
                 }

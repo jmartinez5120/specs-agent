@@ -29,7 +29,7 @@ spec:
               service:
                 name: specs-agent-web
                 port:
-                  number: 8080
+                  number: 80
     # Convenience: also expose under /specs-agent on the bare cluster IP
     # so you can hit it without a DNS entry while doing initial testing.
     - http:
@@ -40,4 +40,4 @@ spec:
               service:
                 name: specs-agent-web
                 port:
-                  number: 8080
+                  number: 80
