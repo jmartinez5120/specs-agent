@@ -21,3 +21,12 @@ tron-*.png
 .playwright-mcp/
 .claude/
 .coverage
+
+# Node deps (web/)
+web/node_modules/
+web/dist/
+
+# Python build artefacts
+**/__pycache__/
+*.pyc
+.pytest_cache/

@@ -16,7 +16,9 @@ from specs_agent.reporting.formatters import (
     status_color,
 )
 
-TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "assets"
+TEMPLATE_DIR = Path(__file__).parent / "templates"
+# Fallback for dev layouts where the template still lives under repo_root/assets/.
+_LEGACY_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "assets"
 
 
 def generate_html_report(report: Report, output_path: str) -> str:
@@ -29,8 +31,11 @@ def generate_html_report(report: Report, output_path: str) -> str:
     Returns:
         The output file path.
     """
+    search_paths = [str(TEMPLATE_DIR)]
+    if _LEGACY_TEMPLATE_DIR.is_dir():
+        search_paths.append(str(_LEGACY_TEMPLATE_DIR))
     env = Environment(
-        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        loader=FileSystemLoader(search_paths),
         autoescape=False,
     )
     template = env.get_template("report_template.html")

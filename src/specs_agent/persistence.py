@@ -23,6 +23,7 @@ def save_plan(plan: TestPlan, path: str) -> str:
         "auth_type": plan.auth_type,
         "auth_value": plan.auth_value,
         "global_headers": plan.global_headers,
+        "global_variables": dict(getattr(plan, "global_variables", {}) or {}),
         "test_cases": [_case_to_dict(tc) for tc in plan.test_cases],
     }
     out = Path(path).expanduser()
@@ -53,6 +54,10 @@ def _case_to_dict(tc: TestCase) -> dict:
         "needs_input": tc.needs_input,
         "test_type": tc.test_type,
         "depends_on": tc.depends_on,
+        "ai_fields": tc.ai_fields,
+        "ai_generated": tc.ai_generated,
+        "ai_category": tc.ai_category,
+        "local_variables": dict(getattr(tc, "local_variables", {}) or {}),
         "assertions": [
             {"type": a.type.value, "expected": a.expected, "description": a.description}
             for a in tc.assertions
@@ -70,6 +75,7 @@ def _plan_from_dict(data: dict) -> TestPlan:
         auth_type=data.get("auth_type", "none"),
         auth_value=data.get("auth_value", ""),
         global_headers=data.get("global_headers", {}),
+        global_variables=data.get("global_variables", {}) or {},
         test_cases=test_cases,
     )
 
@@ -102,4 +108,8 @@ def _case_from_dict(data: dict) -> TestCase:
         test_type=data.get("test_type", "happy"),
         depends_on=data.get("depends_on"),
         assertions=assertions,
+        ai_fields=data.get("ai_fields", []),
+        ai_generated=data.get("ai_generated", False),
+        ai_category=data.get("ai_category", ""),
+        local_variables=data.get("local_variables", {}) or {},
     )

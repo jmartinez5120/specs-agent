@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ report.plan_name }} — Specs Invaders Report</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: #1a1b2e;
+    color: #c0c0d0;
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  a { color: #55aacc; text-decoration: none; }
+  h1, h2, h3 { color: #55cc55; font-weight: 600; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 1rem; border-bottom: 1px dashed #333355; padding-bottom: 0.5rem; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 0.5rem; color: #cc9944; }
+
+  .header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding: 2rem;
+    border: 1px dashed #333355;
+    border-radius: 4px;
+  }
+  .header .logo { color: #55cc55; font-size: 0.7rem; white-space: pre; line-height: 1.1; }
+  .header .subtitle { color: #7a7a9a; margin-top: 0.5rem; }
+  .header .meta { color: #555577; font-size: 0.85rem; margin-top: 1rem; }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .stat {
+    background: #222240;
+    border: 1px solid #333355;
+    border-radius: 4px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .stat .value { font-size: 1.8rem; font-weight: 700; }
+  .stat .label { color: #7a7a9a; font-size: 0.8rem; margin-top: 0.25rem; }
+  .stat.passed .value { color: #55cc55; }
+  .stat.failed .value { color: #cc4444; }
+  .stat.errors .value { color: #cc9944; }
+  .stat.rate .value { color: #55aacc; }
+  .stat.time .value { color: #c0c0d0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+  th {
+    background: #222240;
+    color: #7a7a9a;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #333355;
+    font-weight: 600;
+  }
+  td {
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid #1e1f32;
+  }
+  tr:nth-child(even) { background: #1e1f32; }
+  tr:hover { background: #252640; }
+
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .method { font-weight: 700; }
+  .method-get { color: #55cc55; }
+  .method-post { color: #cc9944; }
+  .method-put { color: #5599dd; }
+  .method-patch { color: #55aacc; }
+  .method-delete { color: #cc4444; }
+
+  .assertion-list { list-style: none; padding: 0; margin: 0.25rem 0; }
+  .assertion-list li { padding: 0.15rem 0; font-size: 0.8rem; }
+  .assertion-pass { color: #55cc55; }
+  .assertion-fail { color: #cc4444; }
+
+  .perf-table .value { text-align: right; }
+
+  .footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px dashed #333355;
+    text-align: center;
+    color: #555577;
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <pre class="logo">   ░█           ░█         ░█
+ ░█           ░█  ░█         ░█
+░█░█        ░█      ░█     ░█░█
+ ░█           ░█  ░█         ░█
+   ░█           ░█         ░█</pre>
+  <h1>{{ report.plan_name }}</h1>
+  <div class="subtitle">SPECS INVADERS — Mission Report</div>
+  <div class="meta">
+    {{ report.spec_title }} | {{ report.base_url }}<br>
+    {{ report.started_at[:19] }} — {{ format_duration(report.duration_seconds) }}
+  </div>
+</div>
+
+<h2>Summary</h2>
+<div class="summary">
+  <div class="stat passed">
+    <div class="value">{{ report.passed_tests }}</div>
+    <div class="label">PASSED</div>
+  </div>
+  <div class="stat failed">
+    <div class="value">{{ report.failed_tests }}</div>
+    <div class="label">FAILED</div>
+  </div>
+  <div class="stat errors">
+    <div class="value">{{ report.error_tests }}</div>
+    <div class="label">ERRORS</div>
+  </div>
+  <div class="stat rate">
+    <div class="value">{{ "%.0f"|format(report.pass_rate) }}%</div>
+    <div class="label">PASS RATE</div>
+  </div>
+  <div class="stat time">
+    <div class="value">{{ format_duration(report.duration_seconds) }}</div>
+    <div class="label">DURATION</div>
+  </div>
+</div>
+
+<h2>Functional Tests ({{ report.total_tests }})</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Method</th>
+      <th>Endpoint</th>
+      <th>Code</th>
+      <th>Time</th>
+      <th>Detail</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in report.functional_results %}
+    <tr>
+      <td>{{ status_badge(r.status.value) }}</td>
+      <td><span class="method method-{{ r.method|lower }}">{{ r.method }}</span></td>
+      <td>{{ r.endpoint }}</td>
+      <td>{{ r.status_code or "—" }}</td>
+      <td>{{ format_latency(r.response_time_ms) }}</td>
+      <td>
+        {% if r.error_message %}
+          <span style="color:#cc4444">{{ r.error_message[:80] }}</span>
+        {% elif r.assertion_results %}
+          <ul class="assertion-list">
+          {% for a in r.assertion_results %}
+            <li class="{{ 'assertion-pass' if a.passed else 'assertion-fail' }}">
+              {{ "✓" if a.passed else "✗" }} {{ a.assertion_type }}
+              {% if not a.passed and a.message %} — {{ a.message[:60] }}{% endif %}
+            </li>
+          {% endfor %}
+          </ul>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if report.performance_results %}
+{% set sla_endpoints = report.performance_results|selectattr("has_sla")|list %}
+{% set breach_endpoints = sla_endpoints|rejectattr("sla_passed")|list %}
+
+{% if sla_endpoints %}
+<h2>SLA Compliance</h2>
+<div class="summary">
+  <div class="stat {{ 'passed' if not breach_endpoints else 'failed' }}">
+    <div class="value">{{ sla_endpoints|length - breach_endpoints|length }}/{{ sla_endpoints|length }}</div>
+    <div class="label">SLAs MET</div>
+  </div>
+  {% if breach_endpoints %}
+  <div class="stat failed">
+    <div class="value">{{ breach_endpoints|length }}</div>
+    <div class="label">BREACHES</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if breach_endpoints %}
+<h3>SLA Breaches</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Method</th>
+      <th>Endpoint</th>
+      <th>Metric</th>
+      <th>SLA</th>
+      <th>Actual</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for pm in breach_endpoints %}
+    {% for check in pm.sla_checks %}
+    {% if not check.passed %}
+    <tr>
+      <td><span class="badge" style="background:#3a1a1a;color:#cc4444">BREACH</span></td>
+      <td><span class="method method-{{ pm.method|lower }}">{{ pm.method }}</span></td>
+      <td>{{ pm.endpoint }}</td>
+      <td>{{ check.metric }}</td>
+      <td>{{ "%.0f"|format(check.threshold) }}{{ check.unit }}</td>
+      <td style="color:#cc4444">{{ "%.0f"|format(check.actual) }}{{ check.unit }}</td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3>SLA Thresholds vs Actual</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Endpoint</th>
+      <th>Metric</th>
+      <th>SLA</th>
+      <th>Actual</th>
+      <th>Margin</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for pm in sla_endpoints %}
+    {% for check in pm.sla_checks %}
+    {% set margin = ((check.threshold - check.actual) / check.threshold * 100) if check.threshold else 0 %}
+    <tr>
+      <td><span class="method method-{{ pm.method|lower }}">{{ pm.method }}</span></td>
+      <td>{{ pm.endpoint }}</td>
+      <td>{{ check.metric }}</td>
+      <td>{{ "%.0f"|format(check.threshold) }}{{ check.unit }}</td>
+      <td style="color:{{ '#55cc55' if check.passed else '#cc4444' }}">{{ "%.0f"|format(check.actual) }}{{ check.unit }}</td>
+      <td style="color:{{ '#55cc55' if check.passed else '#cc4444' }}">{{ "%+.0f"|format(margin) }}%</td>
+      <td>
+        {% if check.passed %}
+        <span class="badge" style="background:#1a3a1a;color:#55cc55">OK</span>
+        {% else %}
+        <span class="badge" style="background:#3a1a1a;color:#cc4444">BREACH</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Performance Results</h2>
+
+{% set has_sla = report.performance_results|selectattr("has_sla")|list|length > 0 %}
+
+<!-- Latency bar chart -->
+<h3>Latency Distribution</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Endpoint</th>
+      <th style="width:300px">Distribution</th>
+      <th>P50</th>
+      <th>P95</th>
+      <th>P99</th>
+      {% if has_sla %}<th>SLA</th><th>Status</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% set max_p99 = report.performance_results|map(attribute='p99_latency_ms')|max %}
+    {% set max_sla = 0 %}
+    {% for pm in report.performance_results %}
+      {% if pm.sla_p99_ms and pm.sla_p99_ms > max_sla %}{% set max_sla = pm.sla_p99_ms %}{% endif %}
+    {% endfor %}
+    {% set scale = [max_p99, max_sla]|max %}
+    {% if scale == 0 %}{% set scale = 1 %}{% endif %}
+    {% for pm in report.performance_results %}
+    {% set p50_pct = (pm.p50_latency_ms / scale * 100)|int %}
+    {% set p95_pct = (pm.p95_latency_ms / scale * 100)|int %}
+    {% set p99_pct = (pm.p99_latency_ms / scale * 100)|int %}
+    {% set p95_breach = pm.sla_p95_ms and pm.p95_latency_ms > pm.sla_p95_ms %}
+    {% set p99_breach = pm.sla_p99_ms and pm.p99_latency_ms > pm.sla_p99_ms %}
+    <tr>
+      <td><span class="method method-{{ pm.method|lower }}">{{ pm.method }}</span></td>
+      <td>{{ pm.endpoint }}</td>
+      <td>
+        <div style="position:relative;height:18px;background:#1a1b2e;border-radius:2px;overflow:hidden">
+          <div style="position:absolute;left:0;top:0;height:100%;width:{{ p50_pct }}%;background:#55cc55"></div>
+          <div style="position:absolute;left:{{ p50_pct }}%;top:0;height:100%;width:{{ p95_pct - p50_pct }}%;background:{{ '#ff0000' if p95_breach else '#cc9944' }}"></div>
+          <div style="position:absolute;left:{{ p95_pct }}%;top:0;height:100%;width:{{ p99_pct - p95_pct }}%;background:{{ '#ff0000' if p99_breach else '#cc4444' }}"></div>
+          {% if pm.sla_p99_ms %}
+          {% set sla_pct = (pm.sla_p99_ms / scale * 100)|int %}
+          <div style="position:absolute;left:{{ sla_pct }}%;top:0;height:100%;width:2px;background:#ffffff"></div>
+          {% endif %}
+        </div>
+      </td>
+      <td class="value">{{ format_latency(pm.p50_latency_ms) }}</td>
+      <td class="value" style="color:{{ '#ff0000' if p95_breach else '#cc9944' }}">{{ format_latency(pm.p95_latency_ms) }}</td>
+      <td class="value" style="color:{{ '#ff0000' if p99_breach else '#cc4444' }}">{{ format_latency(pm.p99_latency_ms) }}</td>
+      {% if has_sla %}
+      <td class="value">
+        {% if pm.sla_p99_ms %}p99&lt;{{ "%.0f"|format(pm.sla_p99_ms) }}ms{% endif %}
+        {% if pm.sla_p95_ms %}p95&lt;{{ "%.0f"|format(pm.sla_p95_ms) }}ms{% endif %}
+        {% if pm.sla_throughput_rps %}&gt;{{ "%.0f"|format(pm.sla_throughput_rps) }}rps{% endif %}
+        {% if not pm.has_sla %}—{% endif %}
+      </td>
+      <td>
+        {% if pm.has_sla %}
+          {% if pm.sla_passed %}
+          <span class="badge" style="background:#1a3a1a;color:#55cc55">OK</span>
+          {% else %}
+          <span class="badge" style="background:#3a1a1a;color:#cc4444">BREACH</span>
+          {% endif %}
+        {% else %}—{% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p style="color:#7a7a9a;font-size:0.8rem;margin-top:0.5rem">
+  <span style="display:inline-block;width:12px;height:12px;background:#55cc55;border-radius:2px"></span> p50
+  <span style="display:inline-block;width:12px;height:12px;background:#cc9944;border-radius:2px;margin-left:8px"></span> p95
+  <span style="display:inline-block;width:12px;height:12px;background:#cc4444;border-radius:2px;margin-left:8px"></span> p99
+  {% if has_sla %}
+  <span style="display:inline-block;width:2px;height:12px;background:#ffffff;margin-left:8px"></span> SLA threshold
+  <span style="display:inline-block;width:12px;height:12px;background:#ff0000;border-radius:2px;margin-left:8px"></span> breach
+  {% endif %}
+</p>
+
+<!-- Detailed numbers table -->
+<h3>Detailed Metrics</h3>
+<table class="perf-table">
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Endpoint</th>
+      <th>Requests</th>
+      <th>RPS</th>
+      <th>Avg</th>
+      <th>P50</th>
+      <th>P95</th>
+      <th>P99</th>
+      <th>Min</th>
+      <th>Max</th>
+      <th>Errors</th>
+      {% if has_sla %}<th>SLA</th><th>Status</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for pm in report.performance_results %}
+    {% set p95_breach = pm.sla_p95_ms and pm.p95_latency_ms > pm.sla_p95_ms %}
+    {% set p99_breach = pm.sla_p99_ms and pm.p99_latency_ms > pm.sla_p99_ms %}
+    <tr>
+      <td><span class="method method-{{ pm.method|lower }}">{{ pm.method }}</span></td>
+      <td>{{ pm.endpoint }}</td>
+      <td class="value">{{ pm.total_requests }}</td>
+      <td class="value">{{ "%.1f"|format(pm.requests_per_second) }}</td>
+      <td class="value">{{ format_latency(pm.avg_latency_ms) }}</td>
+      <td class="value">{{ format_latency(pm.p50_latency_ms) }}</td>
+      <td class="value" style="color:{{ '#ff0000' if p95_breach else '#cc9944' }}">{{ format_latency(pm.p95_latency_ms) }}</td>
+      <td class="value" style="color:{{ '#ff0000' if p99_breach else '#cc4444' }}">{{ format_latency(pm.p99_latency_ms) }}</td>
+      <td class="value">{{ format_latency(pm.min_latency_ms) }}</td>
+      <td class="value">{{ format_latency(pm.max_latency_ms) }}</td>
+      <td class="value" style="color:{{ '#cc4444' if pm.error_rate_pct > 1 else '#7a7a9a' }}">{{ "%.1f"|format(pm.error_rate_pct) }}%</td>
+      {% if has_sla %}
+      <td class="value" style="font-size:0.75rem">
+        {% if pm.sla_p99_ms %}p99&lt;{{ "%.0f"|format(pm.sla_p99_ms) }}ms{% endif %}
+        {% if pm.sla_p95_ms %}p95&lt;{{ "%.0f"|format(pm.sla_p95_ms) }}ms{% endif %}
+        {% if pm.sla_throughput_rps %}&gt;{{ "%.0f"|format(pm.sla_throughput_rps) }}rps{% endif %}
+        {% if not pm.has_sla %}—{% endif %}
+      </td>
+      <td>
+        {% if pm.has_sla %}
+          {% if pm.sla_passed %}
+          <span class="badge" style="background:#1a3a1a;color:#55cc55">OK</span>
+          {% else %}
+          <span class="badge" style="background:#3a1a1a;color:#cc4444">BREACH</span>
+          {% endif %}
+        {% else %}—{% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div class="footer">
+  Generated by <strong>Specs Invaders</strong> — {{ generated_at[:19] }}
+</div>
+
+</body>
+</html>

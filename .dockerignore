@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+.coverage.*
+htmlcov
+*.egg-info
+build
+dist
+.mypy_cache
+.ruff_cache
+
+# Virtual envs
+venv
+.venv
+env
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Claude / specs-agent local state
+.claude
+.specs-agent
+
+# Tests (not needed in runtime image)
+tests
+
+# Docs
+docs
+*.md
+!README.md
+
+# CI
+.github

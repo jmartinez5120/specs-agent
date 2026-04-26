@@ -252,10 +252,19 @@ def list_variables() -> list[dict[str, str]]:
     return result
 
 
-def resolve_string(text: str) -> str:
-    """Replace all {{$var}} or {{var}} placeholders in a string."""
+def resolve_string(text: str, user_vars: dict[str, Any] | None = None) -> str:
+    """Replace all {{$var}} or {{var}} placeholders in a string.
+
+    `user_vars` is a mapping of user-defined variable names (case-insensitive)
+    checked before the built-in Faker generators. This is how per-plan
+    `global_variables` and per-test-case `local_variables` feed into templating.
+    """
+    uv = {k.lower(): v for k, v in (user_vars or {}).items()}
+
     def _replace(match: re.Match) -> str:
         var_name = match.group(1).lower()
+        if var_name in uv:
+            return str(uv[var_name])
         gen = _GENERATORS.get(var_name)
         if gen:
             return str(gen())
@@ -264,27 +273,32 @@ def resolve_string(text: str) -> str:
     return _VAR_PATTERN.sub(_replace, text)
 
 
-def resolve_value(value: Any) -> Any:
+def resolve_value(value: Any, user_vars: dict[str, Any] | None = None) -> Any:
     """Recursively resolve template variables in any value.
 
     Handles strings, dicts, lists, and nested structures.
-    Non-string leaf values are returned as-is.
+    Non-string leaf values are returned as-is. `user_vars` (merged
+    global+local plan vars) takes precedence over built-in generators.
     """
+    uv = {k.lower(): v for k, v in (user_vars or {}).items()}
+
     if isinstance(value, str):
-        resolved = resolve_string(value)
+        resolved = resolve_string(value, uv)
         # If the entire string was a single variable, try to return native type
         if resolved != value and _VAR_PATTERN.fullmatch(value.strip()):
             # The original was a single {{var}}, return the native type
             var_name = _VAR_PATTERN.match(value.strip()).group(1).lower()
+            if var_name in uv:
+                return uv[var_name]
             gen = _GENERATORS.get(var_name)
             if gen:
                 return gen()
         return resolved
 
     if isinstance(value, dict):
-        return {k: resolve_value(v) for k, v in value.items()}
+        return {k: resolve_value(v, uv) for k, v in value.items()}
 
     if isinstance(value, list):
-        return [resolve_value(item) for item in value]
+        return [resolve_value(item, uv) for item in value]
 
     return value

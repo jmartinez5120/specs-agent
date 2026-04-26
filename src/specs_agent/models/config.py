@@ -44,6 +44,23 @@ class PerformanceConfig:
 
 
 @dataclass
+class TokenFetchConfig:
+    """Configuration for fetching a bearer token from an auth endpoint
+    before (or during) a test run. When set, the executor calls the token
+    URL and injects the result as the Authorization header — refreshing
+    automatically as the token expires."""
+    token_url: str = ""
+    method: str = "POST"  # POST or GET
+    headers: str = ""  # JSON object of extra headers
+    integration_id_field: str = "client_id"
+    integration_id_value: str = ""
+    scope: str = ""  # space-separated
+    extra_body: str = ""  # JSON blob merged with integration_id + scope
+    token_response_path: str = "access_token"
+    response_has_bearer_prefix: bool = False
+
+
+@dataclass
 class TestRunConfig:
     base_url: str = ""
     timeout_seconds: float = 30.0
@@ -55,3 +72,4 @@ class TestRunConfig:
     auth_value: str = ""
     auth_header: str = "Authorization"
     performance: PerformanceConfig = field(default_factory=PerformanceConfig)
+    token_fetch: TokenFetchConfig | None = None

@@ -125,3 +125,53 @@ class TestHTMLReport:
         path = str(tmp_path / "nested" / "dir" / "report.html")
         result = generate_html_report(report, path)
         assert Path(result).exists()
+
+    def test_empty_report_renders(self, tmp_path):
+        """A report with no results still renders without crashing."""
+        empty = Report(
+            plan_name="Empty",
+            base_url="http://nothing",
+            spec_title="Empty Spec",
+            started_at="2026-04-15T00:00:00+00:00",
+            finished_at="2026-04-15T00:00:00+00:00",
+            duration_seconds=0,
+        )
+        path = str(tmp_path / "empty.html")
+        generate_html_report(empty, path)
+        html = Path(path).read_text()
+        assert "Empty" in html
+
+    def test_html_contains_performance_metrics_values(self, tmp_path):
+        report = _make_report()
+        path = str(tmp_path / "report.html")
+        generate_html_report(report, path)
+        html = Path(path).read_text()
+        # Key perf numbers should be rendered somewhere
+        assert "100" in html  # total_requests
+        assert "20" in html   # rps
+
+    def test_base_url_in_report(self, tmp_path):
+        report = _make_report()
+        path = str(tmp_path / "report.html")
+        generate_html_report(report, path)
+        html = Path(path).read_text()
+        assert "petstore.example.com" in html
+
+
+class TestPDFReport:
+    """Verify PDF generation path gracefully handles missing weasyprint."""
+
+    def test_pdf_without_weasyprint_raises_importerror(self, tmp_path, monkeypatch):
+        import sys
+
+        import specs_agent.reporting.generator as gen
+
+        # Simulate weasyprint not installed
+        monkeypatch.setitem(sys.modules, "weasyprint", None)
+
+        report = _make_report()
+        path = str(tmp_path / "report.pdf")
+        import pytest
+
+        with pytest.raises(ImportError, match="weasyprint"):
+            gen.generate_pdf_report(report, path)

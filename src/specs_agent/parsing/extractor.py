@@ -50,12 +50,14 @@ def extract_spec(raw: dict, source_url: str = "") -> ParsedSpec:
 
 
 def _extract_servers(raw: dict, is_v2: bool, source_url: str = "") -> list[ServerInfo]:
+    from specs_agent.net import rewrite_for_display
+
     if is_v2:
         host = raw.get("host", "localhost")
         base_path = raw.get("basePath", "")
         schemes = raw.get("schemes", ["https"])
         scheme = schemes[0] if schemes else "https"
-        return [ServerInfo(url=f"{scheme}://{host}{base_path}")]
+        return [ServerInfo(url=rewrite_for_display(f"{scheme}://{host}{base_path}"))]
     else:
         servers = raw.get("servers", [])
         result = []
@@ -67,7 +69,7 @@ def _extract_servers(raw: dict, is_v2: bool, source_url: str = "") -> list[Serve
                 parsed = urlparse(source_url)
                 origin = f"{parsed.scheme}://{parsed.netloc}"
                 url = f"{origin}{url}"
-            result.append(ServerInfo(url=url, description=s.get("description", "")))
+            result.append(ServerInfo(url=rewrite_for_display(url), description=s.get("description", "")))
         return result
 
 
@@ -307,15 +309,33 @@ def _extract_request_body(
         rb = operation.get("requestBody")
         if not rb:
             return None
-        content = rb.get("content", {})
-        # Prefer application/json
-        json_content = content.get("application/json", {})
-        if json_content:
-            return json_content.get("schema")
-        # Fall back to first content type
-        for ct_data in content.values():
-            return ct_data.get("schema")
+        return _pick_schema(rb.get("content", {}))
+
+
+def _pick_schema(content: dict) -> dict | None:
+    """Pick the best-fit schema from an OpenAPI content map.
+
+    Prefers application/json, then any json-ish type, then */*, then
+    the first available content type. Many specs (Spring/Swagger) emit
+    "*/*" instead of "application/json" when the controller doesn't
+    declare a produces/consumes type.
+    """
+    if not content:
         return None
+    for ct in ("application/json", "application/*+json", "text/json"):
+        ct_data = content.get(ct)
+        if ct_data and ct_data.get("schema") is not None:
+            return ct_data["schema"]
+    for ct, ct_data in content.items():
+        if "json" in ct.lower() and ct_data.get("schema") is not None:
+            return ct_data["schema"]
+    wildcard = content.get("*/*")
+    if wildcard and wildcard.get("schema") is not None:
+        return wildcard["schema"]
+    for ct_data in content.values():
+        if isinstance(ct_data, dict) and ct_data.get("schema") is not None:
+            return ct_data["schema"]
+    return None
 
 
 def _extract_responses(raw_responses: dict, is_v2: bool) -> list[ResponseSpec]:
@@ -333,9 +353,7 @@ def _extract_responses(raw_responses: dict, is_v2: bool) -> list[ResponseSpec]:
         if is_v2:
             schema = resp_data.get("schema")
         else:
-            content = resp_data.get("content", {})
-            json_content = content.get("application/json", {})
-            schema = json_content.get("schema") if json_content else None
+            schema = _pick_schema(resp_data.get("content", {}))
 
         responses.append(
             ResponseSpec(status_code=code, description=description, schema=schema)

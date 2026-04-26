@@ -107,9 +107,17 @@ class PerformanceExecutor:
     """Fires concurrent requests and collects latency samples."""
 
     def __init__(self, config: TestRunConfig) -> None:
+        from specs_agent.execution.token_fetch import TokenFetcher
         self.config = config
         self.perf = config.performance
         self._cancel = asyncio.Event()
+        self._token_fetcher: TokenFetcher | None = None
+        if config.token_fetch and config.token_fetch.token_url:
+            self._token_fetcher = TokenFetcher(
+                config.token_fetch,
+                verify_ssl=config.verify_ssl,
+                timeout_s=config.timeout_seconds,
+            )
 
         # Per-endpoint HDR histograms + counters
         self._histograms: dict[str, HdrHistogram] = {}
@@ -187,7 +195,8 @@ class PerformanceExecutor:
         if not test_cases:
             return []
 
-        base_url = self.config.base_url.rstrip("/")
+        from specs_agent.net import rewrite_localhost_for_docker
+        base_url = rewrite_localhost_for_docker(self.config.base_url).rstrip("/")
         self._start_time = time.monotonic()
         self._prev_snapshot_time = self._start_time
         self._prev_total = 0
@@ -396,14 +405,23 @@ class PerformanceExecutor:
         url = f"{base_url}{path}"
 
         headers: dict[str, str] = {}
-        if self.config.auth_type == "bearer" and self.config.auth_value:
+        if self._token_fetcher is not None:
+            try:
+                token = await self._token_fetcher.get_token()
+                headers[self.config.auth_header or "Authorization"] = f"Bearer {token}"
+            except Exception:
+                # Count as an error and skip the request; latency isn't meaningful.
+                self._errors[key] = self._errors.get(key, 0) + 1
+                self._total[key] = self._total.get(key, 0) + 1
+                return
+        elif self.config.auth_type == "bearer" and self.config.auth_value:
             headers[self.config.auth_header] = f"Bearer {self.config.auth_value}"
 
         self._total[key] = self._total.get(key, 0) + 1
 
         start = time.monotonic()
         try:
-            await client.request(
+            response = await client.request(
                 method=tc.method,
                 url=url,
                 params=query_params or None,
@@ -413,6 +431,8 @@ class PerformanceExecutor:
             elapsed_ms = (time.monotonic() - start) * 1000
             _record_latency(self._histograms.setdefault(key, _new_histogram()), elapsed_ms)
             _record_latency(self._global_histogram, elapsed_ms)
+            if response.status_code >= 400:
+                self._errors[key] = self._errors.get(key, 0) + 1
         except Exception:
             self._errors[key] = self._errors.get(key, 0) + 1
 

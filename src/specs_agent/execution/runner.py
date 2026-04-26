@@ -63,7 +63,10 @@ class TestRunner:
                 ))
                 continue
 
-            result = await executor.execute(test_case)
+            result = await executor.execute(
+                test_case,
+                global_variables=getattr(self.plan, "global_variables", None),
+            )
             functional_results.append(result)
 
             if on_result:

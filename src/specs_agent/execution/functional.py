@@ -10,6 +10,7 @@ import httpx
 from specs_agent.models.config import TestRunConfig
 from specs_agent.models.plan import AssertionType, TestCase
 from specs_agent.models.results import AssertionResult, TestResult, TestStatus
+from specs_agent.execution.token_fetch import TokenFetchError, TokenFetcher
 from specs_agent.execution.validators import (
     validate_body_contains,
     validate_header_present,
@@ -24,18 +25,42 @@ from specs_agent.templating.variables import resolve_value
 class FunctionalExecutor:
     """Executes individual test cases via httpx."""
 
-    def __init__(self, config: TestRunConfig) -> None:
+    def __init__(self, config: TestRunConfig, token_fetcher: TokenFetcher | None = None) -> None:
         self.config = config
+        self._token_fetcher = token_fetcher
+        if token_fetcher is None and config.token_fetch and config.token_fetch.token_url:
+            self._token_fetcher = TokenFetcher(
+                config.token_fetch,
+                verify_ssl=config.verify_ssl,
+                timeout_s=config.timeout_seconds,
+            )
 
-    async def execute(self, test_case: TestCase) -> TestResult:
-        """Execute a single test case and return the result."""
-        base_url = self.config.base_url.rstrip("/")
+    async def execute(
+        self,
+        test_case: TestCase,
+        global_variables: dict[str, Any] | None = None,
+    ) -> TestResult:
+        """Execute a single test case and return the result.
+
+        `global_variables` is the plan's plan-wide user variables. They are
+        merged with the test case's `local_variables` (local wins on key
+        conflict) and passed to the templating resolver.
+        """
+        from specs_agent.net import rewrite_localhost_for_docker
+        base_url = rewrite_localhost_for_docker(self.config.base_url).rstrip("/")
+
+        # Merge plan-wide + per-case user variables (local overrides global).
+        user_vars: dict[str, Any] = {}
+        if global_variables:
+            user_vars.update(global_variables)
+        if getattr(test_case, "local_variables", None):
+            user_vars.update(test_case.local_variables)
 
         # Resolve template variables in all dynamic fields
-        path_params = resolve_value(dict(test_case.path_params))
-        query_params = resolve_value(dict(test_case.query_params))
-        headers = resolve_value(dict(test_case.headers))
-        body = resolve_value(test_case.body) if test_case.body else None
+        path_params = resolve_value(dict(test_case.path_params), user_vars)
+        query_params = resolve_value(dict(test_case.query_params), user_vars)
+        headers = resolve_value(dict(test_case.headers), user_vars)
+        body = resolve_value(test_case.body, user_vars) if test_case.body else None
 
         # Build URL with path params
         path = test_case.endpoint_path
@@ -43,9 +68,20 @@ class FunctionalExecutor:
             path = path.replace(f"{{{k}}}", str(v))
         url = f"{base_url}{path}"
 
-        # Merge headers
+        # Merge headers (await token fetch if configured)
         all_headers = dict(headers)
-        self._inject_auth(all_headers)
+        try:
+            await self._inject_auth(all_headers)
+        except TokenFetchError as exc:
+            return TestResult(
+                test_case_id=test_case.id,
+                test_case_name=test_case.name,
+                endpoint=f"{test_case.method} {test_case.endpoint_path}",
+                method=test_case.method,
+                status=TestStatus.ERROR,
+                test_type=test_case.test_type,
+                error_message=f"Auth token fetch failed: {exc}",
+            )
 
         # Execute request
         start = time.monotonic()
@@ -128,7 +164,13 @@ class FunctionalExecutor:
                 error_message=f"Unexpected error: {exc}",
             )
 
-    def _inject_auth(self, headers: dict) -> None:
+    async def _inject_auth(self, headers: dict) -> None:
+        # Runtime-fetched bearer token takes precedence over a static auth_value.
+        if self._token_fetcher is not None:
+            token = await self._token_fetcher.get_token()
+            header_name = self.config.auth_header or "Authorization"
+            headers[header_name] = f"Bearer {token}"
+            return
         if self.config.auth_type == "bearer" and self.config.auth_value:
             headers[self.config.auth_header] = f"Bearer {self.config.auth_value}"
         elif self.config.auth_type == "api_key" and self.config.auth_value:

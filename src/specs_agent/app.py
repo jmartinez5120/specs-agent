@@ -1,4 +1,9 @@
-"""Main Textual application for specs-agent."""
+"""Main Textual application for specs-agent.
+
+This module is a **thin UI layer** over `specs_agent.engine.Engine`.
+All business logic (parsing, plan gen, merging, persistence, history)
+lives in the engine. The app owns screen navigation and reactive UI state.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +12,13 @@ from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.widgets import LoadingIndicator, Static
 
-from specs_agent.config import AppConfig, add_recent_spec, load_config, save_config
+from specs_agent.config import AppConfig
+from specs_agent.engine import Engine, MergeResult, SpecLoadResult
 from specs_agent.models.config import TestRunConfig
-from specs_agent.models.plan import TestCase, TestPlan
+from specs_agent.models.plan import TestPlan
 from specs_agent.models.results import Report
 from specs_agent.models.spec import ParsedSpec
-from specs_agent.parsing.extractor import extract_spec
-from specs_agent.parsing.loader import SpecLoadError, load_spec, last_warnings
-from specs_agent.parsing.plan_generator import generate_plan
+from specs_agent.parsing.loader import SpecLoadError
 from specs_agent.screens.execution import ExecutionScreen
 from specs_agent.screens.plan_editor import PlanEditorScreen
 from specs_agent.screens.results import ResultsScreen
@@ -41,10 +45,16 @@ class SpecsAgentApp(App):
     run_config: reactive[TestRunConfig] = reactive(TestRunConfig)
     last_report: reactive[Report | None] = reactive(None)
 
-    def __init__(self, spec_source: str | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        spec_source: str | None = None,
+        engine: Engine | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
+        self.engine: Engine = engine or Engine()
         self.initial_spec = spec_source
-        self.config: AppConfig = load_config()
+        self.config: AppConfig = self.engine.load_config()
         self.spec_source: str = ""  # Original source (URL, file path, or clipboard temp path)
         self.spec_source_type: str = ""  # "url", "file", or "clipboard"
         self._spec_was_refreshed: bool = False  # Set after a refresh with changes
@@ -68,110 +78,34 @@ class SpecsAgentApp(App):
         spec_refreshed = self._spec_was_refreshed
         self._spec_was_refreshed = False
 
-        # Generate fresh plan from current spec
-        fresh_plan = generate_plan(self.parsed_spec)
+        plan, merge = self.engine.generate_or_merge_plan(self.parsed_spec)
+        self.test_plan = plan
 
-        # Try loading saved plan and merge intel from matching endpoints
-        saved_plan = self._try_load_saved_plan(self.parsed_spec.title)
-        if saved_plan:
-            merged, kept, new, removed = self._merge_plans(fresh_plan, saved_plan)
-            self.test_plan = merged
-
-            if spec_refreshed or new > 0 or removed > 0:
-                # Spec changed — archive old plan and save the new merged one
-                self._archive_plan(saved_plan)
-                self._auto_save_plan(merged)
+        if merge is not None:
+            # Saved plan existed — merged with fresh
+            if spec_refreshed or merge.new > 0 or merge.removed > 0:
+                # Spec changed: archive old saved plan, save the merged one
+                saved = self.engine.load_saved_plan(self.parsed_spec.title)
+                if saved is not None:
+                    self.engine.archive_plan(saved)
+                self._auto_save_plan(plan)
                 self.notify(
-                    f"Spec updated: {new} new, {removed} removed, {kept} intel preserved",
+                    f"Spec updated: {merge.new} new, {merge.removed} removed, "
+                    f"{merge.kept} intel preserved",
                     title="PLAN REGENERATED",
                 )
             else:
                 self.notify(
-                    f"Loaded saved plan ({kept} intel values preserved)",
+                    f"Loaded saved plan ({merge.kept} intel values preserved)",
                     title="PLAN RESTORED",
                 )
-        else:
-            self.test_plan = fresh_plan
 
         self.push_screen(PlanEditorScreen(self.test_plan))
 
     def _auto_save_plan(self, plan: TestPlan) -> None:
-        """Save plan to disk after merge/regeneration."""
-        from pathlib import Path
-        from specs_agent.persistence import save_plan
-        save_dir = Path.home() / ".specs-agent" / "plans"
-        save_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = plan.name.replace(" ", "_").lower()[:40]
-        path = str(save_dir / f"{safe_name}.yaml")
+        """Save plan to storage after merge/regeneration."""
         try:
-            save_plan(plan, path)
-        except Exception:
-            pass
-
-    def _try_load_saved_plan(self, spec_title: str) -> TestPlan | None:
-        from pathlib import Path
-        from specs_agent.persistence import load_plan
-        save_dir = Path.home() / ".specs-agent" / "plans"
-        safe_name = f"{spec_title} Test Plan".replace(" ", "_").lower()[:40]
-        path = save_dir / f"{safe_name}.yaml"
-        if path.exists():
-            try:
-                return load_plan(str(path))
-            except Exception:
-                return None
-        return None
-
-    def _merge_plans(self, fresh: TestPlan, saved: TestPlan) -> tuple[TestPlan, int, int, int]:
-        """Merge intel from saved plan into fresh plan.
-
-        Uses test case name as key (e.g. "PUT /path → 200") so each variant
-        merges independently.  For body fields, saved values are merged INTO
-        the fresh body so new required fields from the updated spec are kept.
-
-        Returns (merged_plan, kept_count, new_count, removed_count).
-        """
-        # Build lookup from saved plan keyed by name (unique per variant)
-        saved_lookup: dict[str, TestCase] = {}
-        for tc in saved.test_cases:
-            saved_lookup[tc.name] = tc
-
-        kept = 0
-        new = 0
-        for tc in fresh.test_cases:
-            old_tc = saved_lookup.pop(tc.name, None)
-            if old_tc:
-                # Preserve user-edited path/query/header intel
-                tc.path_params = old_tc.path_params
-                tc.query_params = old_tc.query_params
-                tc.headers = old_tc.headers
-                tc.enabled = old_tc.enabled
-                # Smart body merge: start with fresh body (has new required fields),
-                # then overlay saved user edits on top
-                tc.body = _merge_body(tc.body, old_tc.body)
-                kept += 1
-            else:
-                new += 1
-
-        removed = len(saved_lookup)  # Test cases in saved but not in fresh
-
-        fresh.auth_type = saved.auth_type
-        fresh.auth_value = saved.auth_value
-        fresh.global_headers = saved.global_headers
-
-        return fresh, kept, new, removed
-
-    def _archive_plan(self, plan: TestPlan) -> None:
-        """Archive a plan before overwriting with updated spec version."""
-        from datetime import datetime, timezone
-        from pathlib import Path
-        from specs_agent.persistence import save_plan
-
-        archive_dir = Path.home() / ".specs-agent" / "plans" / "archive"
-        safe_name = plan.name.replace(" ", "_").lower()[:40]
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        path = str(archive_dir / f"{safe_name}_{timestamp}.yaml")
-        try:
-            save_plan(plan, path)
+            self.engine.save_plan(plan)
         except Exception:
             pass
 
@@ -196,11 +130,9 @@ class SpecsAgentApp(App):
     @on(ExecutionScreen.ExecutionComplete)
     def on_execution_complete(self, event: ExecutionScreen.ExecutionComplete) -> None:
         self.last_report = event.report
-        # Auto-save to history
         try:
-            from specs_agent.history.storage import save_run
-            path = save_run(event.report)
-            self.notify(f"Run saved to history", title="HISTORY")
+            self.engine.save_run_to_history(event.report)
+            self.notify("Run saved to history", title="HISTORY")
         except Exception:
             pass
 
@@ -239,14 +171,13 @@ class SpecsAgentApp(App):
         """Reload spec in background without popping screens."""
         self.call_from_thread(self.notify, f"Refreshing from {source}...", title="REFRESHING")
         try:
-            raw = load_spec(source)
-            spec = extract_spec(raw, source_url=source)
+            result = self.engine.load_spec_from_source(source)
             self.call_from_thread(
                 self.notify,
-                f"Fetched {len(spec.endpoints)} endpoints",
+                f"Fetched {len(result.spec.endpoints)} endpoints",
                 title="REFRESH LOADED",
             )
-            self.call_from_thread(self._on_refresh_complete, spec)
+            self.call_from_thread(self._on_refresh_complete, result.spec)
         except SpecLoadError as exc:
             self.call_from_thread(
                 self.notify, str(exc), title="REFRESH FAILED", severity="error",
@@ -260,8 +191,7 @@ class SpecsAgentApp(App):
         if not old_spec:
             old_spec = self.parsed_spec
 
-        has_changes = _specs_differ(old_spec, new_spec)
-        if has_changes:
+        if self.engine.specs_differ(old_spec, new_spec):
             self._spec_was_refreshed = True
 
         # Always show side-by-side diff modal
@@ -284,25 +214,24 @@ class SpecsAgentApp(App):
         spec = self._pending_spec
         self.parsed_spec = spec
 
-        from specs_agent.config import add_recent_spec, save_config
-        add_recent_spec(self.config, self.spec_source, spec.title)
-        save_config(self.config)
+        self.engine.record_recent_spec(self.config, self.spec_source, spec.title)
 
         # Auto-regenerate the test plan if spec changed
         if self._spec_was_refreshed and self.test_plan:
-            fresh_plan = generate_plan(spec)
-            saved_plan = self._try_load_saved_plan(spec.title)
-            if saved_plan:
-                merged, kept, new, removed = self._merge_plans(fresh_plan, saved_plan)
-                self._archive_plan(saved_plan)
-                self._auto_save_plan(merged)
-                self.test_plan = merged
+            plan, merge = self.engine.generate_or_merge_plan(spec)
+            if merge is not None:
+                saved = self.engine.load_saved_plan(spec.title)
+                if saved is not None:
+                    self.engine.archive_plan(saved)
+                self._auto_save_plan(plan)
+                self.test_plan = plan
                 self.notify(
-                    f"Plan regenerated: {new} new, {removed} removed, {kept} intel preserved",
+                    f"Plan regenerated: {merge.new} new, {merge.removed} removed, "
+                    f"{merge.kept} intel preserved",
                     title="PLAN UPDATED",
                 )
             else:
-                self.test_plan = fresh_plan
+                self.test_plan = plan
                 self.notify("Plan regenerated from updated spec", title="PLAN UPDATED")
 
         self.notify(
@@ -321,24 +250,13 @@ class SpecsAgentApp(App):
         """Load and parse a spec in a background thread."""
         self._last_source = source
         self.spec_source = source
-        # Determine source type
-        if source.startswith(("http://", "https://")):
-            self.spec_source_type = "url"
-        elif "/.specs-agent/pasted/" in source:
-            self.spec_source_type = "clipboard"
-        else:
-            self.spec_source_type = "file"
+        self.spec_source_type = Engine.classify_source(source)
         self.notify(f"Scanning sector {source}...", title="SCANNING")
         try:
-            raw = load_spec(source)
-            spec = extract_spec(raw, source_url=source)
-            self.parsed_spec = spec
-
-            add_recent_spec(self.config, source, spec.title)
-            save_config(self.config)
-
-            warnings = list(last_warnings.warnings)
-            self.call_from_thread(self._on_spec_loaded, spec, warnings)
+            result = self.engine.load_spec_from_source(source)
+            self.parsed_spec = result.spec
+            self.engine.record_recent_spec(self.config, source, result.spec.title)
+            self.call_from_thread(self._on_spec_loaded, result.spec, result.warnings)
         except SpecLoadError as exc:
             self.call_from_thread(
                 self.notify,
@@ -374,40 +292,3 @@ class SpecsAgentApp(App):
             title="TARGETS LOCKED",
         )
         self.push_screen(SpecBrowserScreen(spec))
-
-
-def _merge_body(fresh_body, saved_body):
-    """Merge saved user edits into the fresh body from the updated spec.
-
-    - Fresh body has all fields the new spec requires (including newly added ones).
-    - Saved body has user-edited values.
-    - Result: fresh body with saved values overlaid where keys match.
-    """
-    if fresh_body is None:
-        return saved_body
-    if saved_body is None:
-        return fresh_body
-    if isinstance(fresh_body, dict) and isinstance(saved_body, dict):
-        merged = dict(fresh_body)  # Start with all fresh keys (includes new required fields)
-        for key, val in saved_body.items():
-            if key in merged:
-                # Recursively merge nested dicts
-                merged[key] = _merge_body(merged[key], val)
-            else:
-                # User added a custom field not in fresh spec — keep it
-                merged[key] = val
-        return merged
-    # For non-dict bodies (string, list, etc.), prefer saved if it was edited
-    return saved_body
-
-
-def _specs_differ(old: ParsedSpec, new: ParsedSpec) -> bool:
-    """Check if two parsed specs differ in any way — raw comparison."""
-    import json
-    try:
-        old_json = json.dumps(old.raw_spec, sort_keys=True)
-        new_json = json.dumps(new.raw_spec, sort_keys=True)
-        return old_json != new_json
-    except Exception:
-        # Fallback: always treat as different if serialization fails
-        return True
