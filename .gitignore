@@ -30,3 +30,7 @@ web/dist/
 **/__pycache__/
 *.pyc
 .pytest_cache/
+
+# Local Docker secrets — provider API keys, etc.
+.env
+.env.local

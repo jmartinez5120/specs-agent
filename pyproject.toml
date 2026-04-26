@@ -26,6 +26,11 @@ dependencies = [
     "pymongo>=4.5.0",
     "motor>=3.4.0",
     "elasticsearch[async]>=8.13.0,<9.0.0",
+    # Multi-provider AI scenario generation. Cheap installs (pure-Python wrappers
+    # over httpx) so they live in the base deps — keeps the container self-
+    # contained for any provider the user picks at runtime via AI Settings.
+    "anthropic>=0.40.0",
+    "openai>=1.50.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +40,8 @@ dev = [
     "pytest-cov>=5.0",
     "mongomock>=4.1.0",
 ]
+# llama-cpp-python is the only heavy/optional dep — it builds native code,
+# adds ~200MB to the image, and is only needed for the local_gguf provider.
 ai = [
     "llama-cpp-python>=0.2.0",
 ]

@@ -124,12 +124,23 @@ services:
       SPECS_AGENT_SEARCH: "elasticsearch"
       ELASTICSEARCH_URL: "http://elasticsearch:9200"
       # AI scenario generation
-      # Backend: "http" uses Docker Model Runner (Metal GPU on Mac),
-      #          "llama_cpp" uses the in-process GGUF baked into the image.
+      # Provider: local_gguf | anthropic | openai | openai_compatible
+      # The UI's AI Settings panel can switch this at runtime; the env var
+      # is the boot-time default.
       SPECS_AGENT_AI_ENABLED: "${SPECS_AGENT_AI_ENABLED:-1}"
+      SPECS_AGENT_AI_PROVIDER: "${SPECS_AGENT_AI_PROVIDER:-anthropic}"
+      # Anthropic — key comes from .env (gitignored). Empty = leave to UI.
+      SPECS_AGENT_AI_ANTHROPIC_API_KEY: "${SPECS_AGENT_AI_ANTHROPIC_API_KEY:-}"
+      SPECS_AGENT_AI_ANTHROPIC_MODEL: "${SPECS_AGENT_AI_ANTHROPIC_MODEL:-claude-haiku-4-5}"
+      # OpenAI
+      SPECS_AGENT_AI_OPENAI_API_KEY: "${SPECS_AGENT_AI_OPENAI_API_KEY:-}"
+      SPECS_AGENT_AI_OPENAI_MODEL: "${SPECS_AGENT_AI_OPENAI_MODEL:-gpt-4o-mini}"
+      SPECS_AGENT_AI_OPENAI_BASE_URL: "${SPECS_AGENT_AI_OPENAI_BASE_URL:-}"
+      # Legacy openai_compatible (Ollama / vLLM / Docker Model Runner)
       SPECS_AGENT_AI_BACKEND: "${SPECS_AGENT_AI_BACKEND:-http}"
       SPECS_AGENT_AI_HTTP_BASE_URL: "${SPECS_AGENT_AI_HTTP_BASE_URL:-http://model-runner.docker.internal/engines/v1}"
       SPECS_AGENT_AI_HTTP_MODEL: "${SPECS_AGENT_AI_HTTP_MODEL:-hf.co/unsloth/gemma-4-E4B-it-GGUF:Q4_K_M}"
+      SPECS_AGENT_AI_HTTP_API_KEY: "${SPECS_AGENT_AI_HTTP_API_KEY:-}"
       SPECS_AGENT_AI_N_CTX: "${SPECS_AGENT_AI_N_CTX:-2048}"
     # On Linux, host.docker.internal does not resolve by default.
     # `host-gateway` is the special value Docker maps to the host address,
@@ -161,7 +172,10 @@ services:
     ports:
       - "5173:80"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      # Use 127.0.0.1 explicitly — busybox wget resolves "localhost" to ::1
+      # first and nginx binds only on IPv4, so a "localhost" check fails
+      # even though the service is healthy from the host side.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 10s
       timeout: 3s
       retries: 3
