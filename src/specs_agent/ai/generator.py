@@ -379,23 +379,22 @@ class AIGenerator:
         endpoint_method: str,
         endpoint_path: str,
         endpoint_description: str = "",
+        endpoint_summary: str = "",
+        endpoint_tags: list[str] | None = None,
+        operation_id: str = "",
     ) -> dict[str, Any]:
         """Generate values for multiple fields in one batched LLM call.
 
-        Args:
-            fields: List of field dicts with keys: name, type, description, enum, format
-            endpoint_method: HTTP method
-            endpoint_path: URL path template
-            endpoint_description: Endpoint summary/description
-
-        Returns:
-            Dict mapping field names to generated values. Fields that
-            failed to generate are omitted (caller falls back to Faker).
+        The richer the context (summary + description + tags + operationId),
+        the more domain-aware the AI's generated values. Plan generator now
+        passes everything Endpoint exposes.
         """
         if not fields:
             return {}
 
-        # Check cache first (batch key covers all fields + endpoint)
+        # Cache key derives from fields + endpoint identity. Adding the
+        # description-derived context to the cache key would invalidate
+        # cache entries on minor doc tweaks, so we keep it fields-only.
         cache_key = AICache.cache_key(fields, endpoint_method, endpoint_path)
         cached = self.cache.get_value(cache_key)
         if cached is not None and isinstance(cached, dict):
@@ -411,6 +410,9 @@ class AIGenerator:
             endpoint_method,
             endpoint_path,
             endpoint_description,
+            endpoint_summary=endpoint_summary,
+            endpoint_tags=endpoint_tags,
+            operation_id=operation_id,
         )
 
         # Run inference
@@ -436,6 +438,9 @@ class AIGenerator:
         parameters: list[dict],
         body_schema: dict | None,
         documented_responses: list[int],
+        endpoint_summary: str = "",
+        endpoint_tags: list[str] | None = None,
+        operation_id: str = "",
     ) -> list[dict]:
         """Propose additional test scenarios for an endpoint via the LLM.
 
@@ -462,6 +467,9 @@ class AIGenerator:
             parameters,
             body_schema,
             documented_responses,
+            endpoint_summary=endpoint_summary,
+            endpoint_tags=endpoint_tags,
+            operation_id=operation_id,
         )
 
         scenarios = self._infer_scenarios(prompt_text)

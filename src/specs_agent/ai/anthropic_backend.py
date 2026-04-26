@@ -97,9 +97,15 @@ class AnthropicBackend:
         user_prompt: str,
         max_tokens: int = 512,
         temperature: float = 0.7,
-        top_p: float = 0.9,
+        top_p: float = 0.9,  # accepted for interface parity, not sent
     ) -> str:
-        """Send a Messages API call. Returns text content or "" on failure."""
+        """Send a Messages API call. Returns text content or "" on failure.
+
+        Note: Anthropic's Messages API rejects (400) when both `temperature`
+        and `top_p` are specified. The shared chat_completion signature
+        across backends accepts both for OpenAI/HTTP compat, but we forward
+        only `temperature` to Anthropic.
+        """
         if not self._ensure_client():
             return ""
 
@@ -110,7 +116,6 @@ class AnthropicBackend:
                 messages=[{"role": "user", "content": user_prompt}],
                 max_tokens=max_tokens,
                 temperature=temperature,
-                top_p=top_p,
             )
         except Exception as exc:
             logger.warning("Anthropic inference failed: %s", exc)

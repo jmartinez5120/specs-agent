@@ -627,7 +627,10 @@ def _ai_enhance_body(
             fields_for_ai,
             endpoint.method.value,
             endpoint.path,
-            endpoint.summary or endpoint.description,
+            endpoint.description,
+            endpoint_summary=endpoint.summary,
+            endpoint_tags=endpoint.tags,
+            operation_id=endpoint.operation_id or "",
         )
     except Exception as exc:
         logger.warning("AI generation failed for %s %s: %s", endpoint.method.value, endpoint.path, exc)
@@ -810,10 +813,13 @@ def _generate_ai_scenarios(
         scenarios = ai.generate_scenarios(
             endpoint_method=endpoint.method.value,
             endpoint_path=endpoint.path,
-            endpoint_description=endpoint.summary or endpoint.description,
+            endpoint_description=endpoint.description,
             parameters=params,
             body_schema=endpoint.request_body_schema,
             documented_responses=documented_codes,
+            endpoint_summary=endpoint.summary,
+            endpoint_tags=endpoint.tags,
+            operation_id=endpoint.operation_id or "",
         )
 
         if on_phase:

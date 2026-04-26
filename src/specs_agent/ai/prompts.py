@@ -35,6 +35,9 @@ def build_batch_prompt(
     endpoint_method: str,
     endpoint_path: str,
     endpoint_description: str = "",
+    endpoint_summary: str = "",
+    endpoint_tags: list[str] | None = None,
+    operation_id: str = "",
 ) -> str:
     """Build a single prompt that requests values for multiple fields.
 
@@ -47,7 +50,12 @@ def build_batch_prompt(
             - format: JSON schema format (may be empty/None)
         endpoint_method: HTTP method (GET, POST, etc.)
         endpoint_path: URL path template
-        endpoint_description: endpoint summary or description
+        endpoint_description: long-form description (multi-line, OK)
+        endpoint_summary: one-liner (often more semantic than description)
+        endpoint_tags: domain tags (e.g. ["Missions"]) — anchors the AI in a
+            specific domain so it generates contextually plausible values
+        operation_id: operationId from the spec (e.g. "createMission") —
+            another semantic hint about intent
     """
     lines = [
         "Generate realistic test values for these API request body fields.",
@@ -55,8 +63,18 @@ def build_batch_prompt(
         "",
         f"Endpoint: {endpoint_method} {endpoint_path}",
     ]
-    if endpoint_description:
-        lines.append(f"Description: {endpoint_description}")
+    if operation_id:
+        lines.append(f"Operation: {operation_id}")
+    if endpoint_tags:
+        lines.append(f"Domain: {', '.join(endpoint_tags)}")
+    if endpoint_summary:
+        lines.append(f"Summary: {endpoint_summary}")
+    if endpoint_description and endpoint_description != endpoint_summary:
+        # Multi-line description: keep it indented so it doesn't get
+        # confused with the structural lines above.
+        lines.append("Description:")
+        for desc_line in endpoint_description.strip().splitlines():
+            lines.append(f"  {desc_line}")
     lines.append("")
     lines.append("Fields:")
 
@@ -228,8 +246,16 @@ def build_scenario_prompt(
     parameters: list[dict],
     body_schema: dict | None,
     documented_responses: list[int],
+    endpoint_summary: str = "",
+    endpoint_tags: list[str] | None = None,
+    operation_id: str = "",
 ) -> str:
-    """Build a prompt that asks the LLM to propose extra test scenarios."""
+    """Build a prompt that asks the LLM to propose extra test scenarios.
+
+    Now passes the full endpoint context (summary + description + tags +
+    operationId) so the AI can ground its proposals in real domain logic
+    instead of generic "what could go wrong with a POST" boilerplate.
+    """
     method_u = endpoint_method.upper()
     body_allowed = method_u in ("POST", "PUT", "PATCH")
     lines = [
@@ -240,13 +266,21 @@ def build_scenario_prompt(
         "",
         f"Endpoint: {endpoint_method} {endpoint_path}",
     ]
+    if operation_id:
+        lines.append(f"Operation: {operation_id}")
+    if endpoint_tags:
+        lines.append(f"Domain: {', '.join(endpoint_tags)}")
     if not body_allowed:
         lines.append(
             f"NOTE: {method_u} requests have no request body. "
             "Every scenario MUST set `body` to null."
         )
-    if endpoint_description:
-        lines.append(f"Description: {endpoint_description}")
+    if endpoint_summary:
+        lines.append(f"Summary: {endpoint_summary}")
+    if endpoint_description and endpoint_description != endpoint_summary:
+        lines.append("Description:")
+        for desc_line in endpoint_description.strip().splitlines():
+            lines.append(f"  {desc_line}")
 
     if parameters:
         lines.append("")
