@@ -142,40 +142,65 @@ export function buildAISettingsPanel(): HTMLElement {
     placeholder: "llama3.1:8b",
   }) as HTMLInputElement;
 
-  // Test-connection helper — points at /ai/status which reflects the SAVED
-  // config. If the user is editing fields without saving, the result reflects
-  // the old state, not the form. Detect that and tell them clearly.
+  // Test-connection helper — exercises the form's CURRENT values, not the
+  // saved config. Remote providers: hit the provider's /v1/models with the
+  // form's API key (or fall back to the saved key when the field is blank).
+  // Local provider: defer to /ai/status since there's no remote handshake.
   const testBtn = (): HTMLButtonElement => h("button.btn.sm.ghost", {
     type: "button",
     onclick: async () => {
       try {
-        const [status, savedConfig] = await Promise.all([getAIStatus(), getConfig()]);
-        const savedProvider = (savedConfig.ai_provider as string | undefined)
-          || (savedConfig.ai_backend as string | undefined)
-          || "local_gguf";
-        const formChanged = activeProvider !== savedProvider
-          || anthropicKey.isDirty()
-          || openaiKey.isDirty()
-          || httpKey.isDirty();
-
-        if (formChanged) {
+        if (activeProvider === "local_gguf") {
+          const status = await getAIStatus();
+          const ok = !!status.available;
           toast(
-            "UNSAVED CHANGES",
-            `Form is set to "${activeProvider}" but the saved provider is "${savedProvider}". Click "Save AI settings" first, then re-test.`,
-            "default",
+            ok ? "OK" : "UNAVAILABLE",
+            ok
+              ? "Local GGUF model reachable."
+              : "Local GGUF model not loadable. Check ai_model_path and that llama-cpp-python is installed.",
+            ok ? "success" : "error",
           );
           return;
         }
 
-        const ok = !!status.available;
-        const provider = (status.provider as string | undefined) || activeProvider;
-        toast(
-          ok ? "OK" : "UNAVAILABLE",
-          ok
-            ? `Provider "${provider}" reachable.`
-            : `Provider "${provider}" is configured but not reachable. Check the API key and model name.`,
-          ok ? "success" : "error",
-        );
+        // Remote providers — pull credentials straight from the form so the
+        // user can validate before saving. Empty key falls back to the saved
+        // value on the server side.
+        const apiKey =
+          activeProvider === "anthropic"
+            ? (anthropicKey.isDirty() ? anthropicKey.input.value : "")
+            : activeProvider === "openai"
+            ? (openaiKey.isDirty() ? openaiKey.input.value : "")
+            : (httpKey.isDirty() ? httpKey.input.value : "");
+        const baseUrl =
+          activeProvider === "openai"
+            ? openaiBaseUrlInput.value
+            : activeProvider === "openai_compatible"
+            ? httpBaseUrlInput.value
+            : "";
+
+        const result = await listAIModels(activeProvider, apiKey, baseUrl);
+        if (result.source === "live") {
+          toast(
+            "OK",
+            `Provider "${activeProvider}" reachable. ${result.models.length} models returned.`,
+            "success",
+          );
+        } else if (result.source === "no_credentials") {
+          toast(
+            "MISSING KEY",
+            "Add an API key to test the connection (or save the form so the saved key is used).",
+            "default",
+          );
+        } else if (result.source === "no_base_url") {
+          toast("MISSING BASE URL", "openai_compatible needs a Base URL.", "default");
+        } else {
+          toast(
+            "UNREACHABLE",
+            `Provider "${activeProvider}" did not respond: ${result.error || "unknown error"}`,
+            "error",
+          );
+        }
       } catch (e) {
         toast("ERROR", String((e as Error).message), "error");
       }
