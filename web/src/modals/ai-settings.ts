@@ -115,12 +115,16 @@ export function buildAISettingsPanel(): HTMLElement {
 
   // Anthropic fields --------------------------------------------------
   let anthropicKey = passwordField("", "sk-ant-...");
-  const anthropicModelSelect = h("select.select") as HTMLSelectElement;
+  const anthropicModelSelect = h("select.select", {
+    style: { flex: "1 1 0", minWidth: "0" },
+  }) as HTMLSelectElement;
   const anthropicModelHint = h(".muted.mono", { style: { fontSize: "11px" } }, "");
 
   // OpenAI fields -----------------------------------------------------
   let openaiKey = passwordField("", "sk-...");
-  const openaiModelSelect = h("select.select") as HTMLSelectElement;
+  const openaiModelSelect = h("select.select", {
+    style: { flex: "1 1 0", minWidth: "0" },
+  }) as HTMLSelectElement;
   const openaiModelHint = h(".muted.mono", { style: { fontSize: "11px" } }, "");
   const openaiBaseUrlInput = h("input.input.mono", {
     type: "text",

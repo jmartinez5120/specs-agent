@@ -602,10 +602,23 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 "x-api-key": key,
                 "anthropic-version": "2023-06-01",
             }
+            # Static fallback covers the major published Claude families.
+            # The live /v1/models call replaces this whenever it succeeds.
             fallback = [
+                # Claude 4 family (latest)
+                {"id": "claude-opus-4-7", "display_name": "Claude Opus 4.7"},
+                {"id": "claude-sonnet-4-7", "display_name": "Claude Sonnet 4.7"},
                 {"id": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5"},
                 {"id": "claude-sonnet-4-5", "display_name": "Claude Sonnet 4.5"},
-                {"id": "claude-opus-4-7", "display_name": "Claude Opus 4.7"},
+                # Claude 3.7
+                {"id": "claude-3-7-sonnet-latest", "display_name": "Claude 3.7 Sonnet"},
+                # Claude 3.5
+                {"id": "claude-3-5-sonnet-latest", "display_name": "Claude 3.5 Sonnet"},
+                {"id": "claude-3-5-haiku-latest", "display_name": "Claude 3.5 Haiku"},
+                # Claude 3
+                {"id": "claude-3-opus-latest", "display_name": "Claude 3 Opus"},
+                {"id": "claude-3-sonnet-20240229", "display_name": "Claude 3 Sonnet"},
+                {"id": "claude-3-haiku-20240307", "display_name": "Claude 3 Haiku"},
             ]
         elif provider == "openai":
             key = req.api_key or config.ai_openai_api_key
@@ -613,9 +626,13 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             url = f"{base}/models"
             headers = {"Authorization": f"Bearer {key}"}
             fallback = [
+                {"id": "gpt-5", "display_name": "GPT-5"},
+                {"id": "gpt-5-mini", "display_name": "GPT-5 mini"},
                 {"id": "gpt-4o", "display_name": "GPT-4o"},
                 {"id": "gpt-4o-mini", "display_name": "GPT-4o mini"},
                 {"id": "gpt-4-turbo", "display_name": "GPT-4 Turbo"},
+                {"id": "o1", "display_name": "o1"},
+                {"id": "o1-mini", "display_name": "o1 mini"},
                 {"id": "gpt-3.5-turbo", "display_name": "GPT-3.5 Turbo"},
             ]
         elif provider == "openai_compatible":
